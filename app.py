@@ -332,7 +332,7 @@ with st.sidebar:
             url = "https://example.co.jp/blog/seo-guide"
         url_match = st.radio(
             "URL一致モード",
-            ["完全一致", "部分一致", "ドメイン一致", "サブドメイン含む"],
+            ["部分一致", "完全一致", "ドメイン一致", "サブドメイン含む"],
             label_visibility="collapsed",
             horizontal=True,
             key="url_match",
