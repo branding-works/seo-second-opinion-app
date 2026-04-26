@@ -337,7 +337,7 @@ with st.sidebar:
     st.divider()
 
     if mode == "サイト分析":
-        st.markdown("**対象URL**")
+        st.markdown("**調査対象URL入力**")
         url = st.text_input(
             "URL",
             placeholder="https://example.co.jp/blog/seo-guide",
