@@ -14,7 +14,14 @@ import streamlit as st
 import plotly.graph_objects as go
 from dotenv import load_dotenv
 
-from seo_analyzer import analyze_site, review_strategy, answer_question, is_mock_mode
+from seo_analyzer import (
+    analyze_site,
+    analyze_site_structured,
+    review_strategy,
+    answer_question,
+    is_mock_mode,
+    _build_mock_structured,
+)
 from ahrefs_client import (
     get_site_metrics,
     get_top_keywords,
@@ -58,6 +65,18 @@ header[data-testid="stHeader"] { display: none; }
 .stDeployButton { display: none; }
 #MainMenu { visibility: hidden; }
 footer { visibility: hidden; }
+
+/* サイドバー折りたたみボタンを無効化 (折りたたまれると元に戻せないため) */
+[data-testid="stSidebarCollapseButton"],
+[data-testid="collapsedControl"],
+button[kind="header"][aria-label*="sidebar" i],
+button[kind="header"][aria-label*="ナビゲーション" i] {
+    display: none !important;
+}
+section[data-testid="stSidebar"] {
+    min-width: 360px !important;
+    max-width: 360px !important;
+}
 
 /* カスタムヘッダー */
 .bw-header {
@@ -304,10 +323,12 @@ with st.sidebar:
         st.markdown("**対象URL**")
         url = st.text_input(
             "URL",
-            value="https://example.co.jp/blog/seo-guide",
+            placeholder="https://example.co.jp/blog/seo-guide",
             label_visibility="collapsed",
             key="target_url",
         )
+        if not url:
+            url = "https://example.co.jp/blog/seo-guide"
         url_match = st.radio(
             "URL一致モード",
             ["完全一致", "部分一致", "ドメイン一致", "サブドメイン含む"],
@@ -454,11 +475,92 @@ def render_score_bars(scores: dict):
     st.markdown(rows_html, unsafe_allow_html=True)
 
 
-# ─── Mode A: サイト分析 ─────────────────────────────────
-if mode == "サイト分析":
-    # 課題スコア + レーダー
-    total_score = sum(v[0] for v in DEFAULT_SCORES.values())
+# ─── Mode A: サイト分析 (データドリブン) ───────────────────
 
+
+def _scores_dict_from_data(data: dict) -> dict:
+    """data["summary"]["axes"] を render_radar_chart / render_score_bars 用の dict に変換。"""
+    out = {}
+    for ax in data["summary"]["axes"]:
+        out[ax["name"]] = (ax["score"], ax["total"], ax["issues"])
+    return out
+
+
+def _render_axis_content(axis_data: dict):
+    """課題サマリタブ内・各軸の指摘事項+通過項目を描画。"""
+    issues = axis_data.get("issues", [])
+    passed = axis_data.get("passed", [])
+
+    if issues:
+        st.markdown("#### 指摘事項")
+        table = "| 観点 | 施策 | エビデンス | 確認URL | 優先度 |\n|---|---|---|---|---|\n"
+        for it in issues:
+            obs = it.get("observation", "")
+            sub = it.get("observation_sub", "")
+            obs_full = f"{obs} ({sub})" if sub else obs
+            ev = " ".join(
+                [f"[{e.get('label','')}]({e.get('url','#')})" for e in it.get("evidence", [])]
+            )
+            check_url = it.get("check_url", "")
+            check_label = check_url.split("/", 3)[-1] if check_url.startswith("http") and "/" in check_url[8:] else check_url
+            check_md = f"[/{check_label}]({check_url})" if check_url else ""
+            priority = it.get("priority", "")
+            table += f"| {obs_full} | {it.get('action','')} | {ev} | {check_md} | {priority} |\n"
+        st.markdown(table)
+    else:
+        st.success("✓ 課題なし")
+
+    if passed:
+        st.markdown(f"#### ✓ 問題のなかった項目 ({len(passed)}件)")
+        items = []
+        for p in passed:
+            name = p.get("name", "")
+            url_p = p.get("url", "")
+            if url_p:
+                items.append(f"- ✓ {name} [↗]({url_p})")
+            else:
+                items.append(f"- ✓ {name}")
+        st.markdown("\n".join(items))
+
+
+if mode == "サイト分析":
+
+    # ─── 実行ボタン押下時: データ更新 ───
+    if run_btn:
+        st.markdown("---")
+        with st.status("分析を実行中...", expanded=True) as status:
+            st.write(f"📥 対象URL を取得中: `{url}`")
+            time.sleep(0.4)
+            st.write("🔍 Ahrefs サイト指標を取得中...")
+            time.sleep(0.5)
+            st.write("📊 流入KW・上位URL・ディレクトリを集計中...")
+            time.sleep(0.4)
+            st.write("🤖 Anthropic Opus 4.7 にリクエスト中...")
+            if is_mock_mode():
+                time.sleep(0.8)
+                new_data = _build_mock_structured(url)
+                status.update(label="✓ 分析完了 (mockモード)", state="complete", expanded=False)
+            else:
+                new_data = analyze_site_structured(url, url_match)
+                st.write("✏️  結果を整形中...")
+                time.sleep(0.2)
+                status.update(label="✓ 分析完了", state="complete", expanded=False)
+        st.session_state.analysis_data = new_data
+        if "error" in new_data:
+            st.warning(f"⚠️ {new_data['error']}")
+
+    # ─── データ取得 (session_state にあれば使用、無ければ mock) ───
+    data = st.session_state.get("analysis_data")
+    if data is None:
+        data = _build_mock_structured(url)
+
+    summary = data["summary"]
+    url_meta = data.get("url_meta", {})
+    target_url = data.get("target_url", url)
+    scores_dict = _scores_dict_from_data(data)
+    total_score = summary["total_score"]
+
+    # ─── 上段: スコア + レーダー + メタ情報 ───
     col_left, col_right = st.columns([1, 1])
 
     with col_left:
@@ -476,272 +578,172 @@ if mode == "サイト分析":
 
         sub_left, sub_right = st.columns([1, 1])
         with sub_left:
-            st.plotly_chart(render_radar_chart(DEFAULT_SCORES), use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(
+                render_radar_chart(scores_dict),
+                use_container_width=True,
+                config={"displayModeBar": False},
+            )
         with sub_right:
-            render_score_bars(DEFAULT_SCORES)
+            render_score_bars(scores_dict)
 
     with col_right:
         st.markdown("**調査URLメタ情報**")
+        title_v = url_meta.get("title") or "(取得失敗)"
+        desc_v = url_meta.get("meta_description") or "(なし)"
+        idx_v = url_meta.get("index_status") or "(不明)"
+        canonical_v = url_meta.get("canonical") or "self"
+        sd_v = " ".join([f"`{s}`" for s in url_meta.get("structured_data", [])]) or "(なし)"
+        title_v = str(title_v).replace("|", "\\|")
+        desc_v = str(desc_v).replace("|", "\\|")
         st.markdown(
             f"""
 | 項目 | 値 |
 |---|---|
-| Title | SEO 内部対策の完全ガイド \\| example.co.jp |
-| Meta-desc | SEO 内部対策のベストプラクティスを、Google公式情報とリーク資料を踏まえて解説 |
-| インデックス | ✓ 登録済み (canonical: self) |
-| 構造化データ | `Article` `BreadcrumbList` `Organization` |
-| 対象URL | [{st.session_state.get('target_url', '')}]({st.session_state.get('target_url', '')}) |
+| Title | {title_v} |
+| Meta-desc | {desc_v} |
+| インデックス | {idx_v} (canonical: {canonical_v}) |
+| 構造化データ | {sd_v} |
+| 対象URL | [{target_url}]({target_url}) |
         """,
             unsafe_allow_html=False,
         )
 
-    # サマリー
+    # ─── サマリー ───
     st.markdown("### サマリー")
     sum_col1, sum_col2, sum_col3 = st.columns(3)
     with sum_col1:
         st.markdown("**強み**")
-        st.markdown("独自の現場データに基づく記述が部分的に存在 / 内部リンク設計はトピックハブを形成しつつある")
+        st.markdown(summary.get("strengths", ""))
     with sum_col2:
         st.markdown("**懸念**")
-        st.markdown("著者プロフィール欠落により `siteAuthority` の伸びが阻害 / `OriginalContentScore` を押し下げる重複コンテンツが3記事")
+        st.markdown(summary.get("concerns", ""))
     with sum_col3:
         st.markdown("**施策案**")
-        st.markdown("著者プロフィールの構造化と組織情報の整備 (EEAT軸 / 優先度 高)")
+        st.markdown(summary.get("priority_action", ""))
 
     st.divider()
 
-    # 3タブ
+    # ─── 3タブ ───
     tab1, tab2, tab3 = st.tabs(["課題サマリ", "サイトデータ", "参考"])
 
     with tab1:
         st.markdown("**課題可能性** _(発見数 / 全チェック項目数)_")
 
-        axis_tabs = st.tabs([
-            f"内部SEO・テクニカル 3/17",
-            f"外部SEO・サイテーション 2/7",
-            f"コンテンツSEO・記事 5/21",
-            f"EEAT・広報 6/14",
-            f"AI露出 (LLMO・AI引用) 2/8",
-        ])
+        axes_meta = summary["axes"]
+        axis_keys = [a["key"] for a in axes_meta]
+        axis_labels = [
+            f"{a['name']} {a['issues']}/{a['total']}" for a in axes_meta
+        ]
+        axis_tabs = st.tabs(axis_labels)
 
-        # 各軸の指摘事項テーブル (モックデータ)
-        with axis_tabs[0]:
-            st.markdown("#### 指摘事項")
-            st.markdown(
-                """
-| 観点 | 施策 | エビデンス | 確認URL | 優先度 |
-|---|---|---|---|---|
-| ページ表示速度 (PageSpeed モバイル48点) | 画像のWebP化、render-blocking JS の defer | [公式](https://web.dev/articles/vitals) [リーク](https://hexdocs.pm/google_api_content_warehouse/0.4.0/api-reference.html) | [/blog/seo-guide](https://example.co.jp/blog/seo-guide) | 高 |
-| パンくずリスト未設置 | BreadcrumbList schema を全記事に実装 | [公式](https://developers.google.com/search/docs/appearance/structured-data/breadcrumb) [リーク](https://hexdocs.pm/google_api_content_warehouse/0.4.0/api-reference.html) | [/blog/seo-guide](https://example.co.jp/blog/seo-guide) | 中 |
-| alt属性の不備 (画像30%未設定) | CMS 側で alt 必須バリデーション | [公式](https://developers.google.com/search/docs/appearance/google-images) | [/blog/structured-data](https://example.co.jp/blog/structured-data) | 中 |
-            """
-            )
-            st.markdown("#### ✓ 問題のなかった項目 (14件)")
-            st.markdown(
-                """
-- ✓ URL正規化 (HTTPS対応済み)
-- ✓ リンク切れなし
-- ✓ sitemap.xml 設置・送信済み
-- ✓ robots.txt 適切
-- ✓ 内部リンク 絶対パス記載
-- ✓ 主要ページからの導線設置
-- ✓ CSS-Positioning なし
-- ✓ モバイル ユーザビリティOK
-- ✓ モバイルアノテーション設定
-- ✓ MFI 対応
-- ✓ カスタム404 設置
-- ✓ サイトマップページ
-- ✓ Search Console 登録
-- ✓ GA4 設定
-            """
-            )
-
-        with axis_tabs[1]:
-            st.markdown("#### 指摘事項")
-            st.markdown(
-                """
-| 観点 | 施策 | エビデンス | 確認URL | 優先度 |
-|---|---|---|---|---|
-| 外部発リンクの関連性 (5件検出) | 関連性低リンクに `nofollow` 付加 | [QRG](https://services.google.com/fh/files/misc/hsw-sqrg.pdf) [リーク](https://hexdocs.pm/google_api_content_warehouse/0.4.0/api-reference.html) | [/blog/inp-optimization](https://example.co.jp/blog/inp-optimization) | 中 |
-| Google ビジネスプロフィール 未設定 | GBP登録、NAP整備 | [公式](https://support.google.com/business/) | [Google Maps](https://www.google.com/maps) | 低 |
-            """
-            )
-            st.markdown("#### ✓ 問題のなかった項目 (5件)")
-            st.markdown(
-                """
-- ✓ アンカーテキスト最適化
-- ✓ 中古ドメイン使用なし
-- ✓ サイトレピュテーション健全
-- ✓ 外部リンクのアンカー多様性
-- ✓ サイテーション / ブランド言及あり
-            """
-            )
-
-        with axis_tabs[2]:
-            st.markdown("#### 指摘事項")
-            st.markdown(
-                """
-| 観点 | 施策 | エビデンス | 確認URL | 優先度 |
-|---|---|---|---|---|
-| `<title>`タグ対策KW不足 (10ページ) | title に「対策KW + サービス名」 | [リーク](https://hexdocs.pm/google_api_content_warehouse/0.4.0/api-reference.html) [公式](https://developers.google.com/search/docs/appearance/title-link) | [/service/](https://example.co.jp/service/) | 高 |
-| メインコンテンツ情報不足 (5ページ idx除外) | 独自視点・一次情報を追加 | [リーク](https://hexdocs.pm/google_api_content_warehouse/0.4.0/api-reference.html) [QRG](https://services.google.com/fh/files/misc/hsw-sqrg.pdf) | [/blog/sitemap-xml](https://example.co.jp/blog/sitemap-xml) | 高 |
-| 重複コンテンツ (類似度高い記事3件) | canonical設定 or 統合 | [リーク](https://hexdocs.pm/google_api_content_warehouse/0.4.0/api-reference.html) | [/blog/inp-optimization](https://example.co.jp/blog/inp-optimization) | 中 |
-| `<h1>`タグ不適切 (複数h1ページ4件) | h1を1ページ1つに統一 | [公式](https://developers.google.com/style/headings) | [/about/](https://example.co.jp/about/) | 中 |
-| meta-description重複 (8ページ) | 各ページ独自の description 作成 | [公式](https://developers.google.com/search/docs/appearance/snippet) | [/blog/structured-data](https://example.co.jp/blog/structured-data) | 低 |
-            """
-            )
-            st.markdown("#### ✓ 問題のなかった項目 (16件)")
-            st.markdown(
-                "title重複なし / hx階層適切 / コンテンツボリューム適正 / 自動生成テキストなし / コピーテキストなし / 大量定型文なし / 類似コンテンツなし / 重複URLなし / ナビゲーションリンク整備 / サブコンテンツ適正 ほか"
-            )
-
-        with axis_tabs[3]:
-            st.markdown("#### 指摘事項")
-            st.markdown(
-                """
-| 観点 | 施策 | エビデンス | 確認URL | 優先度 |
-|---|---|---|---|---|
-| 著者プロフィール (記事ごとの著者明示なし) | 記事末尾に Person schema 付きで配置 | [QRG](https://services.google.com/fh/files/misc/hsw-sqrg.pdf) [リーク×2](https://hexdocs.pm/google_api_content_warehouse/0.4.0/api-reference.html) | [/blog/seo-guide](https://example.co.jp/blog/seo-guide) | 高 |
-| 組織情報 (会社概要が薄手) | Organization schema追加 | [QRG](https://services.google.com/fh/files/misc/hsw-sqrg.pdf) [公式](https://blog.google/products/search/about-search-results/) | [/about/](https://example.co.jp/about/) | 高 |
-| ブランド指名検索 (月間200 → 目標1,000+) | 展示会・PR配信で社名露出 | [VRP](https://www.candour.co.uk/blog/google-search-leak/) [リーク](https://hexdocs.pm/google_api_content_warehouse/0.4.0/api-reference.html) | [/](https://example.co.jp/) | 高 |
-| 第三者言及 (権威媒体露出ゼロ) | 業界トップ3媒体に寄稿/取材獲得 | [QRG](https://services.google.com/fh/files/misc/hsw-sqrg.pdf) [訴訟資料](https://www.justice.gov/atr/case/us-and-plaintiff-states-v-google-llc-search) | [/](https://example.co.jp/) | 中 |
-| Wikipedia/Wikidata (エントリ未作成) | Wikidata エンティティ作成 | [特許](https://patents.google.com/patent/US8396865B1) [推測] | [Wikidata](https://www.wikidata.org/) | 中 |
-| 受賞・認証 (記載なし) | 受賞・認証あれば組織ページに明示 | [QRG](https://services.google.com/fh/files/misc/hsw-sqrg.pdf) | [/about/](https://example.co.jp/about/) | 低 |
-            """
-            )
-            st.markdown("#### ✓ 問題のなかった項目 (8件)")
-            st.markdown(
-                "HTTPS / プライバシーポリシー / 運営会社情報整備 / お問い合わせフォーム / 著者ページ存在 / 引用・出典記載 / 記事更新日記載 / 専門用語の用語集"
-            )
-
-        with axis_tabs[4]:
-            st.markdown("#### 指摘事項")
-            st.markdown(
-                """
-| 観点 | 施策 | エビデンス | 確認URL | 優先度 |
-|---|---|---|---|---|
-| llms.txt 未設置 | サイトルートに llms.txt 配置 | [二次解説](https://llmstxt.org/) | [/llms.txt](https://example.co.jp/llms.txt) | 低 |
-| AI Overviews への引用ゼロ | パッセージ最適化、Q&A形式 | [公式](https://blog.google/products/search/ai-overviews-update-may-2024/) [二次解説](https://ipullrank.com/the-rank-revolution-by-mike-king) | [SERP例](https://www.google.com/search?q=SEO+%E5%86%85%E9%83%A8%E5%AF%BE%E7%AD%96&udm=14) | 中 |
-            """
-            )
-            st.markdown("#### ✓ 問題のなかった項目 (6件)")
-            st.markdown(
-                "Article schema設置 / robots.txt AIクローラー許可 / パッセージ構造良好 / 一次情報・独自データ記載 / 質問形式の見出し使用 / 用語集・FAQ整備"
-            )
+        for tab_obj, axis_key in zip(axis_tabs, axis_keys):
+            with tab_obj:
+                _render_axis_content(data["axes"].get(axis_key, {"issues": [], "passed": []}))
 
         st.divider()
         st.markdown("### 実施にあたって要検討施策")
-        st.warning(
-            """
-- **架空の著者プロフィールを生成** — QRGは実体験を重視。Lowest 品質判定の対象 [QRG]
-- **EMD (完全一致ドメイン) を新規取得** — `ExactMatchDomainDemotion` 属性が存在 [リーク]
-- **FAQスキーマを通常コンテンツに追加** — 2023-08以降、政府・医療以外ではリッチリザルトに表示されない [公式]
-- **記事の更新日のみ書き換える** — `bylineDate` と `semanticDate` を比較する仕組みあり、内容を変えない更新は逆効果 [リーク]
-- **HowToスキーマの追加** — 2023-09に大半のクエリで廃止済み [公式]
-        """
-        )
+        donts = data.get("donts", [])
+        if donts:
+            donts_md = "\n".join(
+                [
+                    f"- **{d.get('name','')}** — {d.get('reason','')} [{d.get('evidence_label','')}]({d.get('evidence_url','#')})"
+                    for d in donts
+                ]
+            )
+            st.warning(donts_md)
 
     with tab2:
         st.markdown("#### Ahrefs サイト指標")
-        st.caption("出典: Ahrefs Site Explorer / 2026-04-27時点 (mock)")
+        ahrefs = data.get("ahrefs", {})
+        metrics = ahrefs.get("metrics", {})
+        fetched_at = metrics.get("fetched_at", "mock")
+        st.caption(f"出典: Ahrefs Site Explorer / 2026-04-27時点 ({fetched_at})")
 
-        metrics = get_site_metrics("example.co.jp")
         kc1, kc2, kc3, kc4 = st.columns(4)
         with kc1:
             st.markdown(
-                f'<div class="kpi-card"><div class="kpi-label">Domain Rating</div><div class="kpi-value">{metrics["domain_rating"]}<span style="font-size:0.78rem;color:#6b6b6b;margin-left:0.2rem;">/100</span></div><div class="kpi-sub">前月比 +1</div></div>',
+                f'<div class="kpi-card"><div class="kpi-label">Domain Rating</div><div class="kpi-value">{metrics.get("domain_rating", 0)}<span style="font-size:0.78rem;color:#6b6b6b;margin-left:0.2rem;">/100</span></div><div class="kpi-sub">前月比 ±</div></div>',
                 unsafe_allow_html=True,
             )
         with kc2:
             st.markdown(
-                f'<div class="kpi-card"><div class="kpi-label">月間自然検索セッション</div><div class="kpi-value">{metrics["monthly_organic_sessions"]:,}</div><div class="kpi-sub">直近30日</div></div>',
+                f'<div class="kpi-card"><div class="kpi-label">月間自然検索セッション</div><div class="kpi-value">{metrics.get("monthly_organic_sessions", 0):,}</div><div class="kpi-sub">直近30日</div></div>',
                 unsafe_allow_html=True,
             )
         with kc3:
             st.markdown(
-                f'<div class="kpi-card"><div class="kpi-label">被リンク元ドメイン (全体)</div><div class="kpi-value">{metrics["referring_domains_total"]}</div><div class="kpi-sub">RD 全カウント</div></div>',
+                f'<div class="kpi-card"><div class="kpi-label">被リンク元ドメイン (全体)</div><div class="kpi-value">{metrics.get("referring_domains_total", 0)}</div><div class="kpi-sub">RD 全カウント</div></div>',
                 unsafe_allow_html=True,
             )
         with kc4:
             st.markdown(
-                f'<div class="kpi-card"><div class="kpi-label">被リンク元ドメイン (価値あり)</div><div class="kpi-value">{metrics["referring_domains_quality"]}</div><div class="kpi-sub">dofollow / 非スパム</div></div>',
+                f'<div class="kpi-card"><div class="kpi-label">被リンク元ドメイン (価値あり)</div><div class="kpi-value">{metrics.get("referring_domains_quality", 0)}</div><div class="kpi-sub">dofollow / 非スパム</div></div>',
                 unsafe_allow_html=True,
             )
 
         st.markdown("")
-        st.info(f"**{metrics['organic_pages_count']}** ページが自然検索流入を獲得中 (Ahrefs 上位ページ)")
+        pages_count = metrics.get("organic_pages_count", 0)
+        st.info(f"**{pages_count}** ページが自然検索流入を獲得中 (Ahrefs 上位ページ)")
 
         st.markdown("#### 流入貢献KW 上位10")
-        kw_data = get_top_keywords("example.co.jp")
-        kw_table = "| KW | 月間 | 順位 | 獲得URL |\n|---|---|---|---|\n"
-        for k in kw_data:
-            kw_table += f"| {k['keyword']} | {k['volume']:,} | {k['position']} | [{k['url']}](https://example.co.jp{k['url']}) |\n"
-        st.markdown(kw_table)
+        domain_for_links = ahrefs.get("domain", "")
+        kw_data = ahrefs.get("top_keywords", [])
+        if kw_data:
+            kw_table = "| KW | 月間 | 順位 | 獲得URL |\n|---|---|---|---|\n"
+            for k in kw_data:
+                ku = k.get("url", "")
+                kw_url = f"https://{domain_for_links}{ku}" if ku.startswith("/") else (ku or "#")
+                kw_table += f"| {k.get('keyword','')} | {k.get('volume',0):,} | {k.get('position',0)} | [{ku}]({kw_url}) |\n"
+            st.markdown(kw_table)
+        else:
+            st.caption("(データなし)")
 
         st.markdown("#### 流入URL 上位10")
-        page_data = get_top_pages("example.co.jp")
-        page_table = "| URL | 推定セッション/月 |\n|---|---|\n"
-        for p in page_data:
-            page_table += f"| [{p['url']}](https://example.co.jp{p['url']}) | {p['estimated_sessions']:,} |\n"
-        st.markdown(page_table)
+        page_data = ahrefs.get("top_pages", [])
+        if page_data:
+            page_table = "| URL | 推定セッション/月 |\n|---|---|\n"
+            for p in page_data:
+                pu = p.get("url", "")
+                p_url = f"https://{domain_for_links}{pu}" if pu.startswith("/") else (pu or "#")
+                page_table += f"| [{pu}]({p_url}) | {p.get('estimated_sessions',0):,} |\n"
+            st.markdown(page_table)
+        else:
+            st.caption("(データなし)")
 
         st.markdown("#### 記事ディレクトリ + サイト構成上位10")
-        dir_data = get_top_directories("example.co.jp")
-        dir_table = "| ディレクトリ | ページ数 | 月間流入 | シェア |\n|---|---|---|---|\n"
-        for d in dir_data:
-            dir_table += f"| [{d['directory']}](https://example.co.jp{d['directory']}) | {d['pages']} | {d['monthly_sessions']:,} | {d['share_pct']:.1f}% |\n"
-        st.markdown(dir_table)
+        dir_data = ahrefs.get("top_directories", [])
+        if dir_data:
+            dir_table = "| ディレクトリ | ページ数 | 月間流入 | シェア |\n|---|---|---|---|\n"
+            for d in dir_data:
+                du = d.get("directory", "")
+                d_url = f"https://{domain_for_links}{du}" if du.startswith("/") else (du or "#")
+                dir_table += f"| [{du}]({d_url}) | {d.get('pages',0)} | {d.get('monthly_sessions',0):,} | {d.get('share_pct',0):.1f}% |\n"
+            st.markdown(dir_table)
+        else:
+            st.caption("(データなし)")
 
     with tab3:
         st.markdown("#### 参考: Google公式系情報より調査サイトに関連する項目")
         st.caption("公式発言を鵜呑みにしないこと。施策判断のときに必ず参照する。")
-        st.markdown(
-            """
-| Googleの公式メッセージ | 内部実装の事実 | 裏付け資料 |
-|---|---|---|
-| Gary Illyes「ドメイン全体の権威スコアは存在しない」 | `siteAuthority` 属性が存在 | [リーク 2024-05](https://hexdocs.pm/google_api_content_warehouse/0.4.0/api-reference.html) |
-| Gary Illyes「クリックは直接ランキングに使わない」 | NavBoost が13ヶ月のクリックデータを使用 | [訴訟資料](https://www.justice.gov/atr/case/us-and-plaintiff-states-v-google-llc-search) |
-| 公式「EMD に特別な扱いはない」 | `ExactMatchDomainDemotion` 属性が存在 | [リーク 2024-05](https://hexdocs.pm/google_api_content_warehouse/0.4.0/api-reference.html) |
-        """
-        )
+        contradictions = data.get("contradictions", [])
+        if contradictions:
+            contra_table = "| Googleの公式メッセージ | 内部実装の事実 | 裏付け資料 |\n|---|---|---|\n"
+            for c in contradictions:
+                pub = str(c.get("public", "")).replace("|", "\\|")
+                intl = str(c.get("internal", "")).replace("|", "\\|")
+                src = f"[{c.get('source_label','')}]({c.get('source_url','#')})"
+                contra_table += f"| {pub} | {intl} | {src} |\n"
+            st.markdown(contra_table)
 
         st.markdown("#### 出典・参考資料")
-        st.markdown(
-            """
-1. [品質評価ガイドライン (QRG) 2023-11版 p.26-33](https://services.google.com/fh/files/misc/hsw-sqrg.pdf) — Experience / About Us / Reputation Research
-2. [Content Warehouse API leak (2024-05)](https://hexdocs.pm/google_api_content_warehouse/0.4.0/api-reference.html) — siteAuthority / pageEntityAuthor / ExactMatchDomainDemotion 等
-3. [US v. Google LLC (Case 1:20-cv-03010)](https://www.justice.gov/atr/case/us-and-plaintiff-states-v-google-llc-search) — Pandu Nayak deposition (2023-10-18)
-4. [Mark Williams-Cook via Google VRP (2024-12)](https://www.candour.co.uk/blog/google-search-leak/) — 指名検索とサイト品質スコアの関連
-5. [US8396865B1](https://patents.google.com/patent/US8396865B1) — Sharing user-submitted data
-6. [US9031929](https://patents.google.com/patent/US9031929) — Site quality score
-7. [Search Central Blog "An update on rich results in Search" (2023-08-08)](https://developers.google.com/search/blog/2023/08/howto-faq-changes)
-8. [Mike King (iPullRank) 2024-05-28](https://ipullrank.com/google-algo-leak)
-        """
-        )
-
-    # 実行ボタン押下時 — ステータス表示付き
-    if run_btn:
-        st.markdown("---")
-        with st.status("分析を実行中...", expanded=True) as status:
-            st.write(f"📥 対象URL を取得中: `{url}`")
-            time.sleep(0.4)
-            st.write("🔍 Ahrefs サイト指標を取得中...")
-            time.sleep(0.5)
-            st.write("📊 流入KW・上位URL・ディレクトリを集計中...")
-            time.sleep(0.4)
-            st.write("🤖 Anthropic Opus 4.7 にリクエスト中...")
-            if is_mock_mode():
-                time.sleep(0.8)
-                result = None
-                status.update(label="✓ 分析完了 (mockモード)", state="complete", expanded=False)
-            else:
-                result = analyze_site(url, url_match)
-                st.write("✏️  結果を整形中...")
-                time.sleep(0.2)
-                status.update(label="✓ 分析完了", state="complete", expanded=False)
-        if result:
-            st.markdown("### 🔄 リアルタイム分析結果")
-            st.markdown(result)
+        sources = data.get("sources", [])
+        if sources:
+            src_lines = []
+            for i, s in enumerate(sources, 1):
+                src_lines.append(
+                    f"{i}. [{s.get('text','')}]({s.get('url','#')}) `[{s.get('label','')}]`"
+                )
+            st.markdown("\n".join(src_lines))
 
 
 # ─── Mode B: 施策レビュー ───────────────────────────────
