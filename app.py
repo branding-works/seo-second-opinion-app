@@ -545,40 +545,74 @@ if mode == "サイト分析":
     # ─── 実行ボタン押下時: データ更新 ───
     if run_btn:
         st.markdown("---")
-        with st.status("分析を実行中...", expanded=True) as status:
-            st.write(f"📥 対象URL を取得中: `{url}`")
-            time.sleep(0.4)
-            st.write("🔍 Ahrefs サイト指標を取得中...")
-            time.sleep(0.5)
-            st.write("📊 流入KW・上位URL・ディレクトリを集計中...")
-            time.sleep(0.4)
-            st.write("🤖 Anthropic Opus 4.7 にリクエスト中...")
-            if is_mock_mode():
-                time.sleep(0.8)
-                new_data = _build_mock_structured(url)
-                status.update(label="✓ 分析完了 (mockモード)", state="complete", expanded=False)
-            else:
-                new_data = analyze_site_structured(url, url_match)
-                st.write("✏️  結果を整形中...")
-                time.sleep(0.2)
-                if new_data.get("error"):
-                    status.update(label=f"⚠ 分析失敗: {new_data['error'][:60]}", state="error", expanded=True)
-                else:
-                    status.update(label="✓ 分析完了", state="complete", expanded=False)
+        # 進捗バー + ステータステキスト
+        progress_bar = st.progress(0, text="開始中...")
+        status_box = st.empty()
+
+        # 想定残り時間 (mock: ~3秒、live: ~25秒)
+        ESTIMATED_TOTAL = 3 if is_mock_mode() else 25
+
+        def _update(pct: int, label: str):
+            remaining = max(0, int(ESTIMATED_TOTAL * (100 - pct) / 100))
+            text = f"{label}  ·  残り約 {remaining}秒"
+            progress_bar.progress(pct, text=text)
+
+        _update(5, "📥 対象URL を取得中...")
+        time.sleep(0.3)
+        _update(20, f"🔍 Ahrefs サイト指標を取得中: {url}")
+        time.sleep(0.3)
+        _update(40, "📊 流入KW・上位URL・ディレクトリを集計中")
+        time.sleep(0.2)
+        _update(55, "🤖 Anthropic Opus 4.7 にリクエスト中 (10-20秒)")
+        if is_mock_mode():
+            time.sleep(0.8)
+            new_data = _build_mock_structured(url)
+        else:
+            new_data = analyze_site_structured(url, url_match)
+        _update(90, "✏️ 結果を整形中")
+        time.sleep(0.2)
+        progress_bar.progress(100, text="✓ 完了")
+        time.sleep(0.3)
+        progress_bar.empty()  # バー消す
         st.session_state.analysis_data = new_data
+
         if new_data.get("error"):
-            st.error(f"⚠️ 分析が完了できませんでした: {new_data['error']}\n\nスコア・指摘事項は空欄表示になります。再度実行してください。")
+            status_box.error(
+                f"⚠️ 分析が完了できませんでした: {new_data['error']}\n\n"
+                "スコア・指摘事項は空欄表示になります。再度「分析を実行」を試してください。"
+            )
+        elif is_mock_mode():
+            status_box.info("✓ 分析完了 (mockモード)")
+        else:
+            status_box.success("✓ 分析完了")
 
     # ─── データ取得 (session_state にあれば使用、無ければ mock) ───
     data = st.session_state.get("analysis_data")
-    if data is None:
+    if data is None or not isinstance(data, dict) or "summary" not in data:
         data = _build_mock_structured(url)
 
-    summary = data["summary"]
+    summary = data.get("summary", {})
     url_meta = data.get("url_meta", {})
     target_url = data.get("target_url", url)
+    # axes が無い・不完全な場合の防御
+    if "axes" not in data or not isinstance(data.get("axes"), dict):
+        data["axes"] = {
+            "internal_seo": {"issues": [], "passed": []},
+            "external_seo": {"issues": [], "passed": []},
+            "content_seo": {"issues": [], "passed": []},
+            "eeat": {"issues": [], "passed": []},
+            "ai_exposure": {"issues": [], "passed": []},
+        }
+    if "axes" not in summary or not isinstance(summary.get("axes"), list):
+        summary["axes"] = [
+            {"key": "internal_seo", "name": "内部SEO・テクニカル", "score": 0, "issues": 0, "total": 17},
+            {"key": "external_seo", "name": "外部SEO・サイテーション", "score": 0, "issues": 0, "total": 7},
+            {"key": "content_seo", "name": "コンテンツSEO・記事", "score": 0, "issues": 0, "total": 21},
+            {"key": "eeat", "name": "EEAT・広報", "score": 0, "issues": 0, "total": 14},
+            {"key": "ai_exposure", "name": "AI露出 (LLMO・AI引用)", "score": 0, "issues": 0, "total": 8},
+        ]
     scores_dict = _scores_dict_from_data(data)
-    total_score = summary["total_score"]
+    total_score = summary.get("total_score", 0)
 
     # ─── 上段: スコア + レーダー + メタ情報 ───
     col_left, col_right = st.columns([1, 1])

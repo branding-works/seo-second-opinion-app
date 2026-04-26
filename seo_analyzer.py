@@ -379,6 +379,21 @@ Ahrefs データ (Site Explorer):
         logger.warning("LLM did not call submit_seo_analysis tool")
         return _build_empty_structured(url, ahrefs_data, page_meta, error="LLMがツール呼び出しを行わなかった")
 
+    # スキーマ検証 (必須キー確認)
+    if not isinstance(parsed, dict) or "summary" not in parsed or "axes" not in parsed:
+        logger.warning(f"LLM tool input missing required keys: keys={list(parsed.keys()) if isinstance(parsed, dict) else type(parsed)}")
+        return _build_empty_structured(url, ahrefs_data, page_meta, error="LLM応答に必須フィールド (summary/axes) が含まれていません")
+
+    # 任意フィールドのデフォルト補完 (空配列で安全に表示できるように)
+    parsed.setdefault("contradictions", [])
+    parsed.setdefault("donts", [])
+    parsed.setdefault("sources", [])
+    if "axes" in parsed and isinstance(parsed["axes"], dict):
+        for k in ["internal_seo", "external_seo", "content_seo", "eeat", "ai_exposure"]:
+            parsed["axes"].setdefault(k, {"issues": [], "passed": []})
+            parsed["axes"][k].setdefault("issues", [])
+            parsed["axes"][k].setdefault("passed", [])
+
     # ahrefs / page_meta / target_url を注入
     parsed["ahrefs"] = ahrefs_data
     parsed["url_meta"] = page_meta
