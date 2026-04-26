@@ -66,16 +66,24 @@ header[data-testid="stHeader"] { display: none; }
 #MainMenu { visibility: hidden; }
 footer { visibility: hidden; }
 
-/* サイドバー折りたたみボタンを無効化 (折りたたまれると元に戻せないため) */
-[data-testid="stSidebarCollapseButton"],
-[data-testid="collapsedControl"],
-button[kind="header"][aria-label*="sidebar" i],
-button[kind="header"][aria-label*="ナビゲーション" i] {
+/* サイドバーを常時展開状態に固定 (折りたたみ無効) */
+[data-testid="stSidebarCollapseButton"] {
     display: none !important;
 }
 section[data-testid="stSidebar"] {
     min-width: 360px !important;
     max-width: 360px !important;
+    transform: translateX(0) !important;
+    visibility: visible !important;
+    margin-left: 0 !important;
+}
+section[data-testid="stSidebar"][aria-expanded="false"] {
+    transform: translateX(0) !important;
+    margin-left: 0 !important;
+}
+/* 折りたたまれていた場合の展開ボタンは表示する (緊急避難用) */
+[data-testid="collapsedControl"] {
+    display: block !important;
 }
 
 /* カスタムヘッダー */
