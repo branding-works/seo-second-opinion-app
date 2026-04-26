@@ -8,8 +8,15 @@ APP_MODE=mock の場合は実APIを呼ばずダミーデータを返す。
 import os
 import json
 from typing import Optional
+from urllib.parse import urlparse
 from anthropic import Anthropic
 from agent_system_prompt import SYSTEM_PROMPT
+from ahrefs_client import (
+    get_site_metrics,
+    get_top_keywords,
+    get_top_pages,
+    get_top_directories,
+)
 
 
 def get_client() -> Optional[Anthropic]:
@@ -30,6 +37,18 @@ def is_mock_mode() -> bool:
     return os.getenv("APP_MODE", "mock").lower() == "mock"
 
 
+def _gather_ahrefs_data(url: str) -> dict:
+    """Ahrefs クライアントから対象ドメインの全データを集める。"""
+    domain = urlparse(url).netloc or url
+    return {
+        "metrics": get_site_metrics(domain),
+        "top_keywords": get_top_keywords(domain),
+        "top_pages": get_top_pages(domain),
+        "top_directories": get_top_directories(domain),
+        "domain": domain,
+    }
+
+
 def analyze_site(
     url: str,
     url_match_mode: str = "完全一致",
@@ -41,7 +60,7 @@ def analyze_site(
     Args:
         url: 対象URL
         url_match_mode: URL一致モード
-        ahrefs_data: Ahrefs API取得データ (optional)
+        ahrefs_data: Ahrefs データ (None の場合は ahrefs_client から自動取得)
         references: 参照する資料のリスト
 
     Returns:
@@ -54,12 +73,16 @@ def analyze_site(
     if client is None:
         return "❌ ANTHROPIC_API_KEY が設定されていません。.env を確認してください。"
 
+    # Ahrefs データを自動取得 (mockモード時はダミーデータ、トークン設定時は実データ)
+    if ahrefs_data is None:
+        ahrefs_data = _gather_ahrefs_data(url)
+
     user_message = f"""モード: A (サイト分析)
 対象URL: {url}
 URL一致モード: {url_match_mode}
 
-事前収集データ:
-{json.dumps(ahrefs_data or {}, ensure_ascii=False, indent=2) if ahrefs_data else '(なし)'}
+事前収集データ (Ahrefs):
+{json.dumps(ahrefs_data, ensure_ascii=False, indent=2)}
 
 参照する資料: {', '.join(references) if references else '全て'}
 
@@ -69,6 +92,7 @@ URL一致モード: {url_match_mode}
 - 通過項目 (問題のなかった項目) も同じく確認URL付きで列挙
 - エビデンスにはクリック可能なソースURLを必ず添える
 - 優先度は 高 / 中 / 低 の3段階のみ
+- サイトデータセクションは上記の「事前収集データ (Ahrefs)」を必ず使う。データが含まれているなら「(未取得)」と書かない
 - 出力は WebUI 表示用の Markdown 形式で、3タブ構造 (課題サマリ / サイトデータ / 参考) に対応するセクション分けで返す
 
 サイト分析を実行してください。"""
