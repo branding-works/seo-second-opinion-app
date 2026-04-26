@@ -1,38 +1,129 @@
 """
-Ahrefs API クライアント。
+Ahrefs API v3 クライアント。
 
-未設定時は mock データを返す。実APIアクセスには有料の Ahrefs API token が必要。
-詳細: https://ahrefs.com/api
+AHREFS_API_TOKEN 環境変数が設定されている場合は実 API を呼び出し、
+未設定の場合は mock データを返す。
+
+API ドキュメント: https://docs.ahrefs.com/docs/api/reference/
+認証: Bearer Token (Advanced プラン以上で利用可能)
 """
 
 import os
-from typing import Optional
+import logging
+from typing import Optional, Any
 
+import requests
+
+logger = logging.getLogger(__name__)
+
+API_BASE = "https://api.ahrefs.com/v3"
+DEFAULT_TIMEOUT = 30
+DEFAULT_COUNTRY = "jp"
+
+
+# ─── 共通ユーティリティ ────────────────────────────────
 
 def has_ahrefs_token() -> bool:
+    """API トークンが設定されているか。"""
     return bool(os.getenv("AHREFS_API_TOKEN"))
 
 
-def get_site_metrics(domain: str) -> dict:
-    """サイト指標 (DR / 被リンク / 月間セッション) を取得。
+def _get_headers() -> dict:
+    token = os.getenv("AHREFS_API_TOKEN", "")
+    return {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+    }
 
-    実装は将来 https://api.ahrefs.com/v3/ にHTTP呼び出しを追加。
-    現状はモックデータを返す。
-    """
+
+def _api_get(path: str, params: dict) -> Optional[dict]:
+    """Ahrefs API に GET リクエスト。エラー時は None を返す。"""
+    url = f"{API_BASE}/{path.lstrip('/')}"
+    try:
+        response = requests.get(
+            url, headers=_get_headers(), params=params, timeout=DEFAULT_TIMEOUT
+        )
+        if response.status_code == 401:
+            logger.error(f"Ahrefs API: 認証エラー (token無効?). path={path}")
+            return None
+        if response.status_code == 403:
+            logger.error(f"Ahrefs API: アクセス権限なし. path={path}")
+            return None
+        if response.status_code >= 400:
+            logger.warning(
+                f"Ahrefs API error {response.status_code}: {response.text[:200]}. path={path}"
+            )
+            return None
+        return response.json()
+    except requests.RequestException as e:
+        logger.error(f"Ahrefs API リクエスト失敗: {e}. path={path}")
+        return None
+
+
+def _normalize_domain(domain: str) -> str:
+    """ドメインから protocol / path を除去。"""
+    d = domain.strip()
+    for prefix in ("https://", "http://"):
+        if d.startswith(prefix):
+            d = d[len(prefix):]
+    d = d.split("/")[0]
+    return d
+
+
+def _safe_get(d: Optional[dict], *keys: str, default: Any = None) -> Any:
+    """ネストした辞書から安全に値を取り出す。"""
+    if d is None:
+        return default
+    cur = d
+    for k in keys:
+        if isinstance(cur, dict) and k in cur:
+            cur = cur[k]
+        else:
+            return default
+    return cur
+
+
+# ─── 公開関数 ──────────────────────────────────────────
+
+def get_site_metrics(domain: str) -> dict:
+    """サイト指標 (DR / 被リンク / 月間セッション)。"""
     if not has_ahrefs_token():
         return _mock_metrics(domain)
 
-    # TODO: 実際の Ahrefs API 呼び出し
-    # import requests
-    # headers = {"Authorization": f"Bearer {os.getenv('AHREFS_API_TOKEN')}"}
-    # response = requests.get(
-    #     "https://api.ahrefs.com/v3/site-explorer/domain-rating",
-    #     headers=headers,
-    #     params={"target": domain, "mode": "domain"},
-    # )
-    # return response.json()
+    target = _normalize_domain(domain)
+    common = {"target": target, "mode": "domain", "protocol": "both"}
 
-    return _mock_metrics(domain)
+    # Domain Rating
+    dr_resp = _api_get("site-explorer/domain-rating", {**common, "date": "today"})
+    dr = _safe_get(dr_resp, "domain_rating", "domain_rating", default=None)
+
+    # Traffic / Organic metrics
+    metrics_resp = _api_get(
+        "site-explorer/metrics",
+        {**common, "country": DEFAULT_COUNTRY, "volume_mode": "monthly"},
+    )
+    sessions = _safe_get(metrics_resp, "metrics", "org_traffic", default=None)
+    pages_count = _safe_get(metrics_resp, "metrics", "pages", default=None)
+
+    # Referring Domains
+    rd_resp = _api_get("site-explorer/refdomains-stats", common)
+    rd_total = _safe_get(rd_resp, "refdomains", "refdomains", default=None)
+    rd_dofollow = _safe_get(rd_resp, "refdomains", "dofollow_refdomains", default=None)
+
+    # Fallback to mock if API failed for the main fields
+    if dr is None and sessions is None:
+        logger.warning("Ahrefs API: 主要メトリクス取得失敗、mock fallback")
+        return _mock_metrics(target)
+
+    return {
+        "domain_rating": dr if dr is not None else 0,
+        "monthly_organic_sessions": sessions if sessions is not None else 0,
+        "referring_domains_total": rd_total if rd_total is not None else 0,
+        "referring_domains_quality": rd_dofollow if rd_dofollow is not None else 0,
+        "organic_pages_count": pages_count if pages_count is not None else 0,
+        "domain": target,
+        "fetched_at": "Ahrefs API v3 (live)",
+    }
 
 
 def get_top_keywords(domain: str, limit: int = 10) -> list[dict]:
@@ -40,8 +131,38 @@ def get_top_keywords(domain: str, limit: int = 10) -> list[dict]:
     if not has_ahrefs_token():
         return _mock_top_keywords()
 
-    # TODO: 実 API 呼び出し
-    return _mock_top_keywords()
+    target = _normalize_domain(domain)
+    resp = _api_get(
+        "site-explorer/organic-keywords",
+        {
+            "target": target,
+            "mode": "domain",
+            "country": DEFAULT_COUNTRY,
+            "limit": limit,
+            "order_by": "traffic:desc",
+            "select": "keyword,volume,position,best_position_url",
+        },
+    )
+    keywords = _safe_get(resp, "keywords", default=None)
+    if not keywords:
+        logger.warning("Ahrefs API: 上位KW取得失敗、mock fallback")
+        return _mock_top_keywords()
+
+    result = []
+    for k in keywords[:limit]:
+        url_full = k.get("best_position_url") or k.get("url", "")
+        # ドメイン部分を除去してパスのみに
+        if url_full.startswith("http"):
+            url_path = "/" + url_full.split("/", 3)[-1] if "/" in url_full[8:] else "/"
+        else:
+            url_path = url_full or "/"
+        result.append({
+            "keyword": k.get("keyword", ""),
+            "volume": k.get("volume", 0),
+            "position": k.get("position", 0),
+            "url": url_path,
+        })
+    return result
 
 
 def get_top_pages(domain: str, limit: int = 10) -> list[dict]:
@@ -49,20 +170,105 @@ def get_top_pages(domain: str, limit: int = 10) -> list[dict]:
     if not has_ahrefs_token():
         return _mock_top_pages()
 
-    # TODO: 実 API 呼び出し
-    return _mock_top_pages()
+    target = _normalize_domain(domain)
+    resp = _api_get(
+        "site-explorer/top-pages",
+        {
+            "target": target,
+            "mode": "domain",
+            "country": DEFAULT_COUNTRY,
+            "limit": limit,
+            "order_by": "traffic:desc",
+            "select": "url,traffic",
+        },
+    )
+    pages = _safe_get(resp, "pages", default=None)
+    if not pages:
+        logger.warning("Ahrefs API: 上位ページ取得失敗、mock fallback")
+        return _mock_top_pages()
+
+    result = []
+    for p in pages[:limit]:
+        url_full = p.get("url", "")
+        if url_full.startswith("http"):
+            parts = url_full.split("/", 3)
+            url_path = "/" + parts[-1] if len(parts) > 3 else "/"
+        else:
+            url_path = url_full or "/"
+        result.append({
+            "url": url_path,
+            "estimated_sessions": p.get("traffic", 0),
+        })
+    return result
 
 
 def get_top_directories(domain: str, limit: int = 10) -> list[dict]:
-    """サイト構成 上位ディレクトリ。"""
+    """サイト構成 上位ディレクトリ。
+
+    top-pages の結果からディレクトリ単位に集計する (大量ページ取得→集計)。
+    """
     if not has_ahrefs_token():
         return _mock_top_directories()
 
-    # TODO: 実 API 呼び出し (top_pages を集計してディレクトリ単位に変換)
-    return _mock_top_directories()
+    target = _normalize_domain(domain)
+    # 大量取得してディレクトリ単位に集計
+    resp = _api_get(
+        "site-explorer/top-pages",
+        {
+            "target": target,
+            "mode": "domain",
+            "country": DEFAULT_COUNTRY,
+            "limit": 500,  # ディレクトリ集計のため広めに取得
+            "order_by": "traffic:desc",
+            "select": "url,traffic",
+        },
+    )
+    pages = _safe_get(resp, "pages", default=None)
+    if not pages:
+        logger.warning("Ahrefs API: ディレクトリ集計用ページ取得失敗、mock fallback")
+        return _mock_top_directories()
+
+    # ディレクトリ集計
+    dir_aggr: dict[str, dict[str, int]] = {}
+    total_traffic = 0
+    for p in pages:
+        url_full = p.get("url", "")
+        traffic = p.get("traffic", 0)
+        total_traffic += traffic
+        # 第一階層のディレクトリを取得
+        if url_full.startswith("http"):
+            parts = url_full.split("/", 4)
+            if len(parts) >= 4 and parts[3]:
+                directory = "/" + parts[3] + "/"
+            else:
+                directory = "/"
+        else:
+            directory = "/"
+
+        if directory not in dir_aggr:
+            dir_aggr[directory] = {"pages": 0, "monthly_sessions": 0}
+        dir_aggr[directory]["pages"] += 1
+        dir_aggr[directory]["monthly_sessions"] += traffic
+
+    # シェア計算 + ソート
+    result = []
+    for directory, agg in dir_aggr.items():
+        share_pct = (
+            (agg["monthly_sessions"] / total_traffic * 100)
+            if total_traffic > 0
+            else 0
+        )
+        result.append({
+            "directory": directory,
+            "pages": agg["pages"],
+            "monthly_sessions": agg["monthly_sessions"],
+            "share_pct": round(share_pct, 1),
+        })
+    result.sort(key=lambda r: r["monthly_sessions"], reverse=True)
+    return result[:limit]
 
 
-# ─── Mock data ────────────────────────────────────────
+# ─── Mock データ (token 未設定時) ──────────────────────
 
 def _mock_metrics(domain: str) -> dict:
     return {
@@ -72,7 +278,7 @@ def _mock_metrics(domain: str) -> dict:
         "referring_domains_quality": 152,
         "organic_pages_count": 248,
         "domain": domain,
-        "fetched_at": "2026-04-27 (mock)",
+        "fetched_at": "mock",
     }
 
 
