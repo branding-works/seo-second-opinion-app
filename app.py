@@ -15,18 +15,11 @@ import plotly.graph_objects as go
 from dotenv import load_dotenv
 
 from seo_analyzer import (
-    analyze_site,
     analyze_site_structured,
     review_strategy,
     answer_question,
     is_mock_mode,
     _build_mock_structured,
-)
-from ahrefs_client import (
-    get_site_metrics,
-    get_top_keywords,
-    get_top_pages,
-    get_top_directories,
 )
 
 # .env 読み込み
@@ -552,10 +545,13 @@ if mode == "サイト分析":
                 new_data = analyze_site_structured(url, url_match)
                 st.write("✏️  結果を整形中...")
                 time.sleep(0.2)
-                status.update(label="✓ 分析完了", state="complete", expanded=False)
+                if new_data.get("error"):
+                    status.update(label=f"⚠ 分析失敗: {new_data['error'][:60]}", state="error", expanded=True)
+                else:
+                    status.update(label="✓ 分析完了", state="complete", expanded=False)
         st.session_state.analysis_data = new_data
-        if "error" in new_data:
-            st.warning(f"⚠️ {new_data['error']}")
+        if new_data.get("error"):
+            st.error(f"⚠️ 分析が完了できませんでした: {new_data['error']}\n\nスコア・指摘事項は空欄表示になります。再度実行してください。")
 
     # ─── データ取得 (session_state にあれば使用、無ければ mock) ───
     data = st.session_state.get("analysis_data")

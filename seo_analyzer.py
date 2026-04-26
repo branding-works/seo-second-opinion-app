@@ -150,59 +150,188 @@ def _extract_json_from_response(text: str) -> Optional[dict]:
     return None
 
 
+_AXIS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "issues": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "observation": {"type": "string"},
+                    "observation_sub": {"type": "string"},
+                    "action": {"type": "string"},
+                    "evidence": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "label": {"type": "string"},
+                                "url": {"type": "string"},
+                                "text": {"type": "string"},
+                            },
+                            "required": ["label", "url"],
+                        },
+                    },
+                    "check_url": {"type": "string"},
+                    "priority": {"type": "string", "enum": ["高", "中", "低"]},
+                },
+                "required": ["observation", "action", "evidence", "priority"],
+            },
+        },
+        "passed": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "url": {"type": "string"},
+                },
+                "required": ["name"],
+            },
+        },
+    },
+    "required": ["issues", "passed"],
+}
+
+ANALYSIS_TOOL = {
+    "name": "submit_seo_analysis",
+    "description": (
+        "SEO セカンドオピニオン分析の構造化結果を提出する。"
+        "5軸 (内部SEO・テクニカル / 外部SEO・サイテーション / コンテンツSEO・記事 / EEAT・広報 / AI露出) で 20点満点ずつ採点し、"
+        "課題項目と通過項目を分けて格納する。"
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "summary": {
+                "type": "object",
+                "properties": {
+                    "total_score": {"type": "integer", "minimum": 0, "maximum": 100},
+                    "axes": {
+                        "type": "array",
+                        "minItems": 5,
+                        "maxItems": 5,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "key": {"type": "string", "enum": ["internal_seo", "external_seo", "content_seo", "eeat", "ai_exposure"]},
+                                "name": {"type": "string"},
+                                "score": {"type": "integer", "minimum": 0, "maximum": 20},
+                                "issues": {"type": "integer", "minimum": 0},
+                                "total": {"type": "integer"},
+                            },
+                            "required": ["key", "name", "score", "issues", "total"],
+                        },
+                    },
+                    "strengths": {"type": "string"},
+                    "concerns": {"type": "string"},
+                    "priority_action": {"type": "string"},
+                },
+                "required": ["total_score", "axes", "strengths", "concerns", "priority_action"],
+            },
+            "axes": {
+                "type": "object",
+                "properties": {
+                    "internal_seo": _AXIS_SCHEMA,
+                    "external_seo": _AXIS_SCHEMA,
+                    "content_seo": _AXIS_SCHEMA,
+                    "eeat": _AXIS_SCHEMA,
+                    "ai_exposure": _AXIS_SCHEMA,
+                },
+                "required": ["internal_seo", "external_seo", "content_seo", "eeat", "ai_exposure"],
+            },
+            "contradictions": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "public": {"type": "string"},
+                        "internal": {"type": "string"},
+                        "source_label": {"type": "string"},
+                        "source_url": {"type": "string"},
+                    },
+                    "required": ["public", "internal", "source_label", "source_url"],
+                },
+            },
+            "donts": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "reason": {"type": "string"},
+                        "evidence_label": {"type": "string"},
+                        "evidence_url": {"type": "string"},
+                    },
+                    "required": ["name", "reason", "evidence_label", "evidence_url"],
+                },
+            },
+            "sources": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "text": {"type": "string"},
+                        "url": {"type": "string"},
+                        "label": {"type": "string"},
+                    },
+                    "required": ["text", "url", "label"],
+                },
+            },
+        },
+        "required": ["summary", "axes", "contradictions", "donts", "sources"],
+    },
+}
+
+
+def _build_empty_structured(url: str, ahrefs_data: dict, page_meta: dict, error: str = "") -> dict:
+    """LLM 失敗時に返す空のスケルトン (スコア 0、空配列)。"""
+    return {
+        "target_url": url,
+        "summary": {
+            "total_score": 0,
+            "axes": [
+                {"key": "internal_seo", "name": "内部SEO・テクニカル", "score": 0, "issues": 0, "total": 17},
+                {"key": "external_seo", "name": "外部SEO・サイテーション", "score": 0, "issues": 0, "total": 7},
+                {"key": "content_seo", "name": "コンテンツSEO・記事", "score": 0, "issues": 0, "total": 21},
+                {"key": "eeat", "name": "EEAT・広報", "score": 0, "issues": 0, "total": 14},
+                {"key": "ai_exposure", "name": "AI露出 (LLMO・AI引用)", "score": 0, "issues": 0, "total": 8},
+            ],
+            "strengths": "",
+            "concerns": "",
+            "priority_action": "",
+        },
+        "url_meta": page_meta,
+        "axes": {
+            "internal_seo": {"issues": [], "passed": []},
+            "external_seo": {"issues": [], "passed": []},
+            "content_seo": {"issues": [], "passed": []},
+            "eeat": {"issues": [], "passed": []},
+            "ai_exposure": {"issues": [], "passed": []},
+        },
+        "ahrefs": ahrefs_data,
+        "contradictions": [],
+        "donts": [],
+        "sources": [],
+        "error": error,
+    }
+
+
 def analyze_site_structured(
     url: str,
     url_match_mode: str = "完全一致",
 ) -> dict:
-    """Mode A の構造化版。UI バインディング用に dict を返す。"""
+    """Mode A の構造化版。Anthropic Tool Use で JSON を保証。"""
     if is_mock_mode():
         return _build_mock_structured(url)
 
     client = get_client()
-    if client is None:
-        return _build_mock_structured(url) | {"error": "ANTHROPIC_API_KEY 未設定"}
-
-    # 1. 周辺データ収集
     ahrefs_data = _gather_ahrefs_data(url)
     page_meta = _fetch_page_meta(url)
 
-    # 2. LLM に JSON で返すよう要求
-    schema_hint = """{
-  "summary": {
-    "total_score": <0-100>,
-    "axes": [
-      {"key": "internal_seo", "name": "内部SEO・テクニカル", "score": <0-20>, "issues": <int>, "total": 17},
-      {"key": "external_seo", "name": "外部SEO・サイテーション", "score": <0-20>, "issues": <int>, "total": 7},
-      {"key": "content_seo", "name": "コンテンツSEO・記事", "score": <0-20>, "issues": <int>, "total": 21},
-      {"key": "eeat", "name": "EEAT・広報", "score": <0-20>, "issues": <int>, "total": 14},
-      {"key": "ai_exposure", "name": "AI露出 (LLMO・AI引用)", "score": <0-20>, "issues": <int>, "total": 8}
-    ],
-    "strengths": "<1-2文>",
-    "concerns": "<1-2文。リーク属性名を `code` で囲む>",
-    "priority_action": "<1-2文。優先度と軸名を末尾に括弧で>"
-  },
-  "axes": {
-    "internal_seo": {
-      "issues": [
-        {"observation": "<観点>", "observation_sub": "<状況の補足>", "action": "<施策>", "evidence": [{"label": "公式|QRG|リーク|訴訟|VRP|特許|二次解説", "url": "<クリック可能URL>", "text": "<出典名>"}], "check_url": "<確認した実URL>", "priority": "高|中|低"}
-      ],
-      "passed": [{"name": "<項目名>", "url": "<確認URL>"}]
-    },
-    "external_seo": {...同形式...},
-    "content_seo": {...},
-    "eeat": {...},
-    "ai_exposure": {...}
-  },
-  "contradictions": [
-    {"public": "<Googleの公式メッセージ>", "internal": "<内部実装の事実>", "source_label": "リーク|訴訟", "source_url": "<URL>"}
-  ],
-  "donts": [
-    {"name": "<やってはいけないこと>", "reason": "<理由・1文>", "evidence_label": "<ラベル>", "evidence_url": "<URL>"}
-  ],
-  "sources": [
-    {"text": "<ソース名・概要>", "url": "<URL>", "label": "<ラベル>"}
-  ]
-}"""
+    if client is None:
+        return _build_empty_structured(url, ahrefs_data, page_meta, error="ANTHROPIC_API_KEY 未設定")
 
     user_message = f"""モード: A (サイト分析・構造化出力モード)
 対象URL: {url}
@@ -215,36 +344,42 @@ Ahrefs データ (Site Explorer):
 {json.dumps(ahrefs_data, ensure_ascii=False, indent=2)}
 
 要求:
-- 必ず以下の JSON スキーマで応答する。前置きや解説は一切書かず、純粋な JSON だけを返す。コードブロック ```json ``` で囲んでよい。
-- 各軸 (5軸) の issues は実際に観察した課題を入れる。passed は通過項目名を簡潔に。
-- 確認URL (check_url, passed.url) は実在URL推定 (与えられた URL の同ドメイン配下)
-- evidence は最低1件、url 必須 (例: https://hexdocs.pm/google_api_content_warehouse/0.4.0/api-reference.html, https://services.google.com/fh/files/misc/hsw-sqrg.pdf, 特許番号URL)
-- score = (total - issues) / total * 20 で計算
-- contradictions は対象サイトに関連するもの2-3件で十分
+- 5軸ごとに issues (指摘事項) と passed (通過項目) を埋める
+- score = ((total - issues件数) / total) * 20 で四捨五入
+- evidence は最低1件、url 必須。ラベルは「公式」「QRG」「リーク」「訴訟」「VRP」「特許」「二次解説」「Googler発言」のいずれか
+- check_url は対象ドメイン配下の実在URL (与えられた URL のドメインを使う)
+- contradictions は対象サイトに関連するもの2-3件
 - donts は対象サイトに該当しそうな都市伝説的施策 3-5件
 - sources は出典リスト 6-10件
 - 推測の評価は priority "低" とし、observation_sub に「推測扱い」と書く
 
-スキーマ:
-{schema_hint}
-"""
+提出は submit_seo_analysis ツールを使うこと (必須)。"""
 
-    response = client.messages.create(
-        model=get_model(),
-        max_tokens=8000,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_message}],
-    )
-    text = response.content[0].text
-    parsed = _extract_json_from_response(text)
+    try:
+        response = client.messages.create(
+            model=get_model(),
+            max_tokens=8000,
+            system=SYSTEM_PROMPT,
+            tools=[ANALYSIS_TOOL],
+            tool_choice={"type": "tool", "name": "submit_seo_analysis"},
+            messages=[{"role": "user", "content": user_message}],
+        )
+    except Exception as e:
+        logger.error(f"Anthropic API error: {e}")
+        return _build_empty_structured(url, ahrefs_data, page_meta, error=f"Anthropic API エラー: {str(e)[:200]}")
+
+    # tool_use ブロックを抽出
+    parsed = None
+    for block in response.content:
+        if getattr(block, "type", None) == "tool_use" and getattr(block, "name", None) == "submit_seo_analysis":
+            parsed = block.input
+            break
+
     if parsed is None:
-        logger.warning("LLM response was not valid JSON; using mock with raw note")
-        mock = _build_mock_structured(url)
-        mock["error"] = "LLM応答がJSON形式でなかったため mock データ表示中"
-        mock["_raw_response"] = text[:2000]
-        return mock
+        logger.warning("LLM did not call submit_seo_analysis tool")
+        return _build_empty_structured(url, ahrefs_data, page_meta, error="LLMがツール呼び出しを行わなかった")
 
-    # ahrefs と page_meta を必ず注入
+    # ahrefs / page_meta / target_url を注入
     parsed["ahrefs"] = ahrefs_data
     parsed["url_meta"] = page_meta
     parsed["target_url"] = url
