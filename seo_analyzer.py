@@ -286,7 +286,18 @@ ANALYSIS_TOOL = {
 
 
 def _build_empty_structured(url: str, ahrefs_data: dict, page_meta: dict, error: str = "") -> dict:
-    """LLM 失敗時に返す空のスケルトン (スコア 0、空配列)。"""
+    """LLM 失敗時に返す空のスケルトン (スコア 0、空配列)。
+
+    エラー時は Ahrefs データも空にする (分析失敗とのUX一貫性のため)。
+    """
+    # エラー時は ahrefs も空にする (KPI・KW・URL・ディレクトリ全て表示しない)
+    empty_ahrefs = {
+        "metrics": {},
+        "top_keywords": [],
+        "top_pages": [],
+        "top_directories": [],
+        "domain": ahrefs_data.get("domain", "") if isinstance(ahrefs_data, dict) else "",
+    }
     return {
         "target_url": url,
         "summary": {
@@ -310,7 +321,7 @@ def _build_empty_structured(url: str, ahrefs_data: dict, page_meta: dict, error:
             "eeat": {"issues": [], "passed": []},
             "ai_exposure": {"issues": [], "passed": []},
         },
-        "ahrefs": ahrefs_data,
+        "ahrefs": empty_ahrefs,
         "contradictions": [],
         "donts": [],
         "sources": [],

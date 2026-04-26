@@ -710,94 +710,108 @@ if mode == "サイト分析":
         st.markdown("#### Ahrefs サイト指標")
         ahrefs = data.get("ahrefs", {})
         metrics = ahrefs.get("metrics", {})
-        fetched_at = metrics.get("fetched_at", "mock")
-        st.caption(f"出典: Ahrefs Site Explorer / 2026-04-27時点 ({fetched_at})")
+        fetched_at = metrics.get("fetched_at", "")
+        ahrefs_empty = bool(data.get("error")) or not metrics
 
-        kc1, kc2, kc3, kc4 = st.columns(4)
-        with kc1:
-            st.markdown(
-                f'<div class="kpi-card"><div class="kpi-label">Domain Rating</div><div class="kpi-value">{metrics.get("domain_rating", 0)}<span style="font-size:0.78rem;color:#6b6b6b;margin-left:0.2rem;">/100</span></div><div class="kpi-sub">前月比 ±</div></div>',
-                unsafe_allow_html=True,
-            )
-        with kc2:
-            st.markdown(
-                f'<div class="kpi-card"><div class="kpi-label">月間自然検索セッション</div><div class="kpi-value">{metrics.get("monthly_organic_sessions", 0):,}</div><div class="kpi-sub">直近30日</div></div>',
-                unsafe_allow_html=True,
-            )
-        with kc3:
-            st.markdown(
-                f'<div class="kpi-card"><div class="kpi-label">被リンク元ドメイン (全体)</div><div class="kpi-value">{metrics.get("referring_domains_total", 0)}</div><div class="kpi-sub">RD 全カウント</div></div>',
-                unsafe_allow_html=True,
-            )
-        with kc4:
-            st.markdown(
-                f'<div class="kpi-card"><div class="kpi-label">被リンク元ドメイン (価値あり)</div><div class="kpi-value">{metrics.get("referring_domains_quality", 0)}</div><div class="kpi-sub">dofollow / 非スパム</div></div>',
-                unsafe_allow_html=True,
-            )
-
-        st.markdown("")
-        pages_count = metrics.get("organic_pages_count", 0)
-        st.info(f"**{pages_count}** ページが自然検索流入を獲得中 (Ahrefs 上位ページ)")
-
-        st.markdown("#### 流入貢献KW 上位10")
-        domain_for_links = ahrefs.get("domain", "")
-        kw_data = ahrefs.get("top_keywords", [])
-        if kw_data:
-            kw_table = "| KW | 月間 | 順位 | 獲得URL |\n|---|---|---|---|\n"
-            for k in kw_data:
-                ku = k.get("url", "")
-                kw_url = f"https://{domain_for_links}{ku}" if ku.startswith("/") else (ku or "#")
-                kw_table += f"| {k.get('keyword','')} | {k.get('volume',0):,} | {k.get('position',0)} | [{ku}]({kw_url}) |\n"
-            st.markdown(kw_table)
+        if ahrefs_empty:
+            st.info("(分析データなし — 分析が完了するとここに Ahrefs サイト指標が表示されます)")
         else:
-            st.caption("(データなし)")
+            st.caption(f"出典: Ahrefs Site Explorer / 2026-04-27時点 ({fetched_at})")
 
-        st.markdown("#### 流入URL 上位10")
-        page_data = ahrefs.get("top_pages", [])
-        if page_data:
-            page_table = "| URL | 推定セッション/月 |\n|---|---|\n"
-            for p in page_data:
-                pu = p.get("url", "")
-                p_url = f"https://{domain_for_links}{pu}" if pu.startswith("/") else (pu or "#")
-                page_table += f"| [{pu}]({p_url}) | {p.get('estimated_sessions',0):,} |\n"
-            st.markdown(page_table)
-        else:
-            st.caption("(データなし)")
+            kc1, kc2, kc3, kc4 = st.columns(4)
+            with kc1:
+                st.markdown(
+                    f'<div class="kpi-card"><div class="kpi-label">Domain Rating</div><div class="kpi-value">{metrics.get("domain_rating", 0)}<span style="font-size:0.78rem;color:#6b6b6b;margin-left:0.2rem;">/100</span></div><div class="kpi-sub">前月比 ±</div></div>',
+                    unsafe_allow_html=True,
+                )
+            with kc2:
+                st.markdown(
+                    f'<div class="kpi-card"><div class="kpi-label">月間自然検索セッション</div><div class="kpi-value">{metrics.get("monthly_organic_sessions", 0):,}</div><div class="kpi-sub">直近30日</div></div>',
+                    unsafe_allow_html=True,
+                )
+            with kc3:
+                st.markdown(
+                    f'<div class="kpi-card"><div class="kpi-label">被リンク元ドメイン (全体)</div><div class="kpi-value">{metrics.get("referring_domains_total", 0)}</div><div class="kpi-sub">RD 全カウント</div></div>',
+                    unsafe_allow_html=True,
+                )
+            with kc4:
+                st.markdown(
+                    f'<div class="kpi-card"><div class="kpi-label">被リンク元ドメイン (価値あり)</div><div class="kpi-value">{metrics.get("referring_domains_quality", 0)}</div><div class="kpi-sub">dofollow / 非スパム</div></div>',
+                    unsafe_allow_html=True,
+                )
 
-        st.markdown("#### 記事ディレクトリ + サイト構成上位10")
-        dir_data = ahrefs.get("top_directories", [])
-        if dir_data:
-            dir_table = "| ディレクトリ | ページ数 | 月間流入 | シェア |\n|---|---|---|---|\n"
-            for d in dir_data:
-                du = d.get("directory", "")
-                d_url = f"https://{domain_for_links}{du}" if du.startswith("/") else (du or "#")
-                dir_table += f"| [{du}]({d_url}) | {d.get('pages',0)} | {d.get('monthly_sessions',0):,} | {d.get('share_pct',0):.1f}% |\n"
-            st.markdown(dir_table)
-        else:
-            st.caption("(データなし)")
+            st.markdown("")
+            pages_count = metrics.get("organic_pages_count", 0)
+            st.info(f"**{pages_count}** ページが自然検索流入を獲得中 (Ahrefs 上位ページ)")
+
+            st.markdown("#### 流入貢献KW 上位10")
+            domain_for_links = ahrefs.get("domain", "")
+            kw_data = ahrefs.get("top_keywords", [])
+            if kw_data:
+                kw_table = "| KW | 月間 | 順位 | 獲得URL |\n|---|---|---|---|\n"
+                for k in kw_data:
+                    ku = k.get("url", "")
+                    kw_url = f"https://{domain_for_links}{ku}" if ku.startswith("/") else (ku or "#")
+                    kw_table += f"| {k.get('keyword','')} | {k.get('volume',0):,} | {k.get('position',0)} | [{ku}]({kw_url}) |\n"
+                st.markdown(kw_table)
+            else:
+                st.caption("(データなし)")
+
+            st.markdown("#### 流入URL 上位10")
+            page_data = ahrefs.get("top_pages", [])
+            if page_data:
+                page_table = "| URL | 推定セッション/月 |\n|---|---|\n"
+                for p in page_data:
+                    pu = p.get("url", "")
+                    p_url = f"https://{domain_for_links}{pu}" if pu.startswith("/") else (pu or "#")
+                    page_table += f"| [{pu}]({p_url}) | {p.get('estimated_sessions',0):,} |\n"
+                st.markdown(page_table)
+            else:
+                st.caption("(データなし)")
+
+            st.markdown("#### 記事ディレクトリ + サイト構成上位10")
+            dir_data = ahrefs.get("top_directories", [])
+            if dir_data:
+                dir_table = "| ディレクトリ | ページ数 | 月間流入 | シェア |\n|---|---|---|---|\n"
+                for d in dir_data:
+                    du = d.get("directory", "")
+                    d_url = f"https://{domain_for_links}{du}" if du.startswith("/") else (du or "#")
+                    dir_table += f"| [{du}]({d_url}) | {d.get('pages',0)} | {d.get('monthly_sessions',0):,} | {d.get('share_pct',0):.1f}% |\n"
+                st.markdown(dir_table)
+            else:
+                st.caption("(データなし)")
 
     with tab3:
-        st.markdown("#### 参考: Google公式系情報より調査サイトに関連する項目")
-        st.caption("公式発言を鵜呑みにしないこと。施策判断のときに必ず参照する。")
         contradictions = data.get("contradictions", [])
-        if contradictions:
-            contra_table = "| Googleの公式メッセージ | 内部実装の事実 | 裏付け資料 |\n|---|---|---|\n"
-            for c in contradictions:
-                pub = str(c.get("public", "")).replace("|", "\\|")
-                intl = str(c.get("internal", "")).replace("|", "\\|")
-                src = f"[{c.get('source_label','')}]({c.get('source_url','#')})"
-                contra_table += f"| {pub} | {intl} | {src} |\n"
-            st.markdown(contra_table)
-
-        st.markdown("#### 出典・参考資料")
         sources = data.get("sources", [])
-        if sources:
-            src_lines = []
-            for i, s in enumerate(sources, 1):
-                src_lines.append(
-                    f"{i}. [{s.get('text','')}]({s.get('url','#')}) `[{s.get('label','')}]`"
-                )
-            st.markdown("\n".join(src_lines))
+        reference_empty = bool(data.get("error")) or (not contradictions and not sources)
+
+        if reference_empty:
+            st.info("(分析データなし — 分析が完了するとここに参考情報・出典が表示されます)")
+        else:
+            st.markdown("#### 参考: Google公式系情報より調査サイトに関連する項目")
+            st.caption("公式発言を鵜呑みにしないこと。施策判断のときに必ず参照する。")
+            if contradictions:
+                contra_table = "| Googleの公式メッセージ | 内部実装の事実 | 裏付け資料 |\n|---|---|---|\n"
+                for c in contradictions:
+                    pub = str(c.get("public", "")).replace("|", "\\|")
+                    intl = str(c.get("internal", "")).replace("|", "\\|")
+                    src = f"[{c.get('source_label','')}]({c.get('source_url','#')})"
+                    contra_table += f"| {pub} | {intl} | {src} |\n"
+                st.markdown(contra_table)
+            else:
+                st.caption("(参考対比情報なし)")
+
+            st.markdown("#### 出典・参考資料")
+            if sources:
+                src_lines = []
+                for i, s in enumerate(sources, 1):
+                    src_lines.append(
+                        f"{i}. [{s.get('text','')}]({s.get('url','#')}) `[{s.get('label','')}]`"
+                    )
+                st.markdown("\n".join(src_lines))
+            else:
+                st.caption("(出典データなし)")
 
 
 # ─── Mode B: 施策レビュー ───────────────────────────────
