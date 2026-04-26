@@ -426,15 +426,27 @@ DEFAULT_SCORES = {
 
 
 def render_radar_chart(scores: dict) -> go.Figure:
-    """5軸レーダーチャート (Plotly)。"""
-    short_names = {
+    """5軸レーダーチャート (Plotly)。LLM の表記揺れに耐性あり。"""
+    short_names_map = {
         "内部SEO・テクニカル": "内部SEO",
         "外部SEO・サイテーション": "外部SEO",
         "コンテンツSEO・記事": "コンテンツSEO",
-        "EEAT・広報": "EEAT・広報",
+        "EEAT・広報": "EEAT",
         "AI露出 (LLMO・AI引用)": "AI露出",
+        # LLM の別表記揺れに対応
+        "AI露出 (LLMO)": "AI露出",
+        "AI露出 (AI引用)": "AI露出",
+        "AI露出": "AI露出",
     }
-    categories = [short_names[k] for k in scores.keys()]
+    def _shorten(name: str) -> str:
+        if name in short_names_map:
+            return short_names_map[name]
+        # 括弧 / 中点で分割して先頭部分を返す
+        for sep in ("(", " ", "・"):
+            if sep in name:
+                return name.split(sep)[0][:12]
+        return name[:12]
+    categories = [_shorten(k) for k in scores.keys()]
     values = [v[0] for v in scores.values()]
 
     fig = go.Figure()
