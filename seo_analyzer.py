@@ -369,7 +369,7 @@ Ahrefs データ (Site Explorer):
     try:
         response = client.messages.create(
             model=get_model(),
-            max_tokens=8000,
+            max_tokens=16000,  # 大きなレスポンスに対応 (出力切れを防止)
             system=SYSTEM_PROMPT,
             tools=[ANALYSIS_TOOL],
             tool_choice={"type": "tool", "name": "submit_seo_analysis"},
@@ -379,6 +379,10 @@ Ahrefs データ (Site Explorer):
         logger.error(f"Anthropic API error: {e}")
         return _build_empty_structured(url, ahrefs_data, page_meta, error=f"Anthropic API エラー: {str(e)[:200]}")
 
+    # stop_reason を取得 (max_tokens 切れ検出用)
+    stop_reason = getattr(response, "stop_reason", "")
+    logger.info(f"Anthropic response stop_reason={stop_reason}, blocks={[getattr(b, 'type', '?') for b in response.content]}")
+
     # tool_use ブロックを抽出
     parsed = None
     for block in response.content:
@@ -387,13 +391,18 @@ Ahrefs データ (Site Explorer):
             break
 
     if parsed is None:
-        logger.warning("LLM did not call submit_seo_analysis tool")
-        return _build_empty_structured(url, ahrefs_data, page_meta, error="LLMがツール呼び出しを行わなかった")
+        logger.warning(f"LLM did not call submit_seo_analysis tool. stop_reason={stop_reason}")
+        return _build_empty_structured(url, ahrefs_data, page_meta, error=f"LLMがツール呼び出しを行わなかった (stop_reason={stop_reason})")
 
     # スキーマ検証 (必須キー確認)
     if not isinstance(parsed, dict) or "summary" not in parsed or "axes" not in parsed:
-        logger.warning(f"LLM tool input missing required keys: keys={list(parsed.keys()) if isinstance(parsed, dict) else type(parsed)}")
-        return _build_empty_structured(url, ahrefs_data, page_meta, error="LLM応答に必須フィールド (summary/axes) が含まれていません")
+        keys_str = list(parsed.keys()) if isinstance(parsed, dict) else type(parsed).__name__
+        logger.warning(f"LLM tool input missing required keys: keys={keys_str}, stop_reason={stop_reason}")
+        if stop_reason == "max_tokens":
+            err_msg = f"LLM応答が max_tokens で切れました (含まれるキー: {keys_str})。max_tokens を増やすか、対象URLを単純化してください。"
+        else:
+            err_msg = f"LLM応答に必須フィールド (summary/axes) が含まれていません (stop_reason={stop_reason}, 含まれるキー: {keys_str})"
+        return _build_empty_structured(url, ahrefs_data, page_meta, error=err_msg)
 
     # 任意フィールドのデフォルト補完 (空配列で安全に表示できるように)
     parsed.setdefault("contradictions", [])
