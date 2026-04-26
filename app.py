@@ -203,6 +203,22 @@ section[data-testid="stSidebar"][aria-expanded="false"] {
 }
 .stButton > button:hover { background: var(--bw-green); color: white; }
 
+/* テキスト入力 (対象URL等) */
+.stTextInput > div > div > input,
+.stTextInput input {
+    background: #fafaf8 !important;
+    border: 1.5px solid #d4d4cf !important;
+    border-radius: 6px !important;
+    padding: 0.55rem 0.75rem !important;
+    transition: border-color 0.15s, background 0.15s;
+}
+.stTextInput > div > div > input:focus,
+.stTextInput input:focus {
+    border-color: var(--bw-green) !important;
+    background: white !important;
+    box-shadow: 0 0 0 2px rgba(28, 181, 123, 0.15);
+}
+
 /* テキストエリア */
 .stTextArea textarea {
     background: #fafaf8;
