@@ -1,0 +1,21 @@
+# Render.com デプロイ設定
+# https://render.com/docs/yaml-spec
+
+services:
+  - type: web
+    name: seo-second-opinion
+    runtime: python
+    plan: free  # Free tier (15分非アクティブで sleep)。商用利用は starter ($7/月) 推奨
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run app.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true --browser.gatherUsageStats=false
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12
+      - key: ANTHROPIC_API_KEY
+        sync: false  # Render ダッシュボードで個別に設定 (機密のため)
+      - key: ANTHROPIC_MODEL
+        value: claude-opus-4-7
+      - key: AHREFS_API_TOKEN
+        sync: false
+      - key: APP_MODE
+        value: mock  # 初期は mock。実APIを使う際は live に変更
