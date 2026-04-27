@@ -363,7 +363,7 @@ Ahrefs データ (Site Explorer):
 
 要求:
 - **summary は必ず辞書 (オブジェクト) で返す**。文字列ではなく以下5フィールドを持つ object: total_score (整数), axes (配列), strengths (文字列), concerns (文字列), priority_action (文字列)
-- **axes (トップレベル) も辞書**。internal_seo / external_seo / content_seo / eeat / ai_exposure をキーとして、各値は {issues: [...], passed: [...]} の object
+- **axes (トップレベル) も辞書**。internal_seo / external_seo / content_seo / eeat / ai_exposure をキーとして、各値は {{issues: [...], passed: [...]}} の object
 - 5軸ごとに issues (指摘事項) と passed (通過項目) を埋める
 - score = ((total - issues件数) / total) * 20 で四捨五入
 - evidence は最低1件、url 必須。ラベルは「公式」「QRG」「リーク」「訴訟」「VRP」「特許」「二次解説」「Googler発言」のいずれか
