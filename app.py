@@ -787,6 +787,18 @@ if mode == "サイト分析":
                     else:
                         st.caption("詳細エラーなし")
 
+            # 診断: 生レスポンス (フィールド名のずれを確認するため)
+            raw_responses = metrics.get("_raw_responses", {})
+            if raw_responses:
+                with st.expander("🔧 診断: Ahrefs API 生レスポンス (フィールド名確認用)", expanded=False):
+                    import json as _json
+                    for endpoint, resp in raw_responses.items():
+                        st.markdown(f"**`{endpoint}`**")
+                        if resp is None:
+                            st.code("(None - エラー)", language=None)
+                        else:
+                            st.code(_json.dumps(resp, ensure_ascii=False, indent=2)[:3000], language="json")
+
             kc1, kc2, kc3, kc4 = st.columns(4)
             with kc1:
                 st.markdown(

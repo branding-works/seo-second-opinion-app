@@ -124,11 +124,14 @@ def get_site_metrics(domain: str) -> dict:
     today_iso = datetime.utcnow().strftime("%Y-%m-%d")
     common = {"target": target, "mode": "domain", "protocol": "both"}
 
+    raw_responses: dict = {}  # 生レスポンスを診断用に保存
+
     # Domain Rating (date は YYYY-MM-DD 必須)
     dr_resp = _api_get(
         "site-explorer/domain-rating",
         {**common, "date": today_iso},
     )
+    raw_responses["domain-rating"] = dr_resp
     dr = (
         _safe_get(dr_resp, "domain_rating", "domain_rating", default=None)
         or _safe_get(dr_resp, "domain_rating", default=None)
@@ -144,26 +147,35 @@ def get_site_metrics(domain: str) -> dict:
             "date": today_iso,
         },
     )
+    raw_responses["metrics"] = metrics_resp
     sessions = (
         _safe_get(metrics_resp, "metrics", "org_traffic", default=None)
         or _safe_get(metrics_resp, "org_traffic", default=None)
     )
     pages_count = (
         _safe_get(metrics_resp, "metrics", "pages", default=None)
+        or _safe_get(metrics_resp, "metrics", "org_pages", default=None)
+        or _safe_get(metrics_resp, "metrics", "indexed_pages", default=None)
         or _safe_get(metrics_resp, "pages", default=None)
     )
 
-    # Backlinks/Referring Domains 集計
+    # Backlinks/Referring Domains 集計 (フィールド名は live_refdomains が正)
     rd_resp = _api_get("site-explorer/backlinks-stats", {**common, "date": today_iso})
+    raw_responses["backlinks-stats"] = rd_resp
     rd_total = (
-        _safe_get(rd_resp, "metrics", "refdomains", default=None)
+        _safe_get(rd_resp, "metrics", "live_refdomains", default=None)
+        or _safe_get(rd_resp, "metrics", "refdomains", default=None)
+        or _safe_get(rd_resp, "metrics", "all_time_refdomains", default=None)
+        or _safe_get(rd_resp, "live_refdomains", default=None)
         or _safe_get(rd_resp, "refdomains", default=None)
         or _safe_get(rd_resp, "backlinks_stats", "refdomains", default=None)
     )
     rd_dofollow = (
-        _safe_get(rd_resp, "metrics", "refdomains_dofollow", default=None)
+        _safe_get(rd_resp, "metrics", "live_refdomains_dofollow", default=None)
+        or _safe_get(rd_resp, "metrics", "refdomains_dofollow", default=None)
+        or _safe_get(rd_resp, "metrics", "live_dofollow_refdomains", default=None)
+        or _safe_get(rd_resp, "live_refdomains_dofollow", default=None)
         or _safe_get(rd_resp, "refdomains_dofollow", default=None)
-        or _safe_get(rd_resp, "backlinks_stats", "refdomains_dofollow", default=None)
     )
 
     # Fallback to mock if API failed for the main fields
@@ -183,6 +195,7 @@ def get_site_metrics(domain: str) -> dict:
         "domain": target,
         "fetched_at": "Ahrefs API v3 (live)",
         "api_status": "live",
+        "_raw_responses": raw_responses,  # 診断用の生レスポンス
     }
 
 
