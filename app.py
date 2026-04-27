@@ -630,10 +630,21 @@ if mode == "サイト分析":
     if data is None or not isinstance(data, dict) or "summary" not in data:
         data = _build_mock_structured(url)
 
-    summary = data.get("summary", {})
-    url_meta = data.get("url_meta", {})
-    target_url = data.get("target_url", url)
-    # axes が無い・不完全な場合の防御
+    # summary が dict でない場合の防御 (LLMが文字列で返すケース)
+    raw_summary = data.get("summary", {})
+    if not isinstance(raw_summary, dict):
+        data["summary"] = {
+            "total_score": 0,
+            "axes": [],
+            "strengths": str(raw_summary) if raw_summary else "",
+            "concerns": "",
+            "priority_action": "",
+        }
+    summary = data["summary"]
+    url_meta = data.get("url_meta", {}) if isinstance(data.get("url_meta"), dict) else {}
+    target_url = data.get("target_url", url) or url
+
+    # axes (data 直下) が無い・不完全な場合の防御
     if "axes" not in data or not isinstance(data.get("axes"), dict):
         data["axes"] = {
             "internal_seo": {"issues": [], "passed": []},
@@ -642,6 +653,14 @@ if mode == "サイト分析":
             "eeat": {"issues": [], "passed": []},
             "ai_exposure": {"issues": [], "passed": []},
         }
+    # 各軸の中身が dict でない場合も補正
+    for k in ["internal_seo", "external_seo", "content_seo", "eeat", "ai_exposure"]:
+        if not isinstance(data["axes"].get(k), dict):
+            data["axes"][k] = {"issues": [], "passed": []}
+        data["axes"][k].setdefault("issues", [])
+        data["axes"][k].setdefault("passed", [])
+
+    # summary.axes が list でない場合の防御
     if "axes" not in summary or not isinstance(summary.get("axes"), list):
         summary["axes"] = [
             {"key": "internal_seo", "name": "内部SEO・テクニカル", "score": 0, "issues": 0, "total": 17},
@@ -651,7 +670,7 @@ if mode == "サイト分析":
             {"key": "ai_exposure", "name": "AI露出 (LLMO・AI引用)", "score": 0, "issues": 0, "total": 8},
         ]
     scores_dict = _scores_dict_from_data(data)
-    total_score = summary.get("total_score", 0)
+    total_score = summary.get("total_score", 0) if isinstance(summary, dict) else 0
 
     # ─── 上段: スコア + レーダー + メタ情報 ───
     col_left, col_right = st.columns([1, 1])

@@ -404,6 +404,22 @@ Ahrefs データ (Site Explorer):
             err_msg = f"LLM応答に必須フィールド (summary/axes) が含まれていません (stop_reason={stop_reason}, 含まれるキー: {keys_str})"
         return _build_empty_structured(url, ahrefs_data, page_meta, error=err_msg)
 
+    # summary が dict でない場合 (string で返してきたケース)
+    if not isinstance(parsed.get("summary"), dict):
+        logger.warning(f"LLM returned summary as {type(parsed.get('summary')).__name__}, not dict")
+        return _build_empty_structured(
+            url, ahrefs_data, page_meta,
+            error=f"LLM応答の summary が dict でなく {type(parsed.get('summary')).__name__} で返されました"
+        )
+
+    # axes が dict でない場合
+    if not isinstance(parsed.get("axes"), dict):
+        logger.warning(f"LLM returned axes as {type(parsed.get('axes')).__name__}, not dict")
+        return _build_empty_structured(
+            url, ahrefs_data, page_meta,
+            error=f"LLM応答の axes が dict でなく {type(parsed.get('axes')).__name__} で返されました"
+        )
+
     # 任意フィールドのデフォルト補完 (空配列で安全に表示できるように)
     parsed.setdefault("contradictions", [])
     parsed.setdefault("donts", [])
