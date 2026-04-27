@@ -10,6 +10,7 @@ API ドキュメント: https://docs.ahrefs.com/docs/api/reference/
 
 import os
 import logging
+from datetime import datetime
 from typing import Optional, Any
 
 import requests
@@ -120,24 +121,50 @@ def get_site_metrics(domain: str) -> dict:
         return result
 
     target = _normalize_domain(domain)
+    today_iso = datetime.utcnow().strftime("%Y-%m-%d")
     common = {"target": target, "mode": "domain", "protocol": "both"}
 
-    # Domain Rating
-    dr_resp = _api_get("site-explorer/domain-rating", {**common, "date": "today"})
-    dr = _safe_get(dr_resp, "domain_rating", "domain_rating", default=None)
+    # Domain Rating (date は YYYY-MM-DD 必須)
+    dr_resp = _api_get(
+        "site-explorer/domain-rating",
+        {**common, "date": today_iso},
+    )
+    dr = (
+        _safe_get(dr_resp, "domain_rating", "domain_rating", default=None)
+        or _safe_get(dr_resp, "domain_rating", default=None)
+    )
 
-    # Traffic / Organic metrics
+    # Traffic / Organic metrics (date 必須)
     metrics_resp = _api_get(
         "site-explorer/metrics",
-        {**common, "country": DEFAULT_COUNTRY, "volume_mode": "monthly"},
+        {
+            **common,
+            "country": DEFAULT_COUNTRY,
+            "volume_mode": "monthly",
+            "date": today_iso,
+        },
     )
-    sessions = _safe_get(metrics_resp, "metrics", "org_traffic", default=None)
-    pages_count = _safe_get(metrics_resp, "metrics", "pages", default=None)
+    sessions = (
+        _safe_get(metrics_resp, "metrics", "org_traffic", default=None)
+        or _safe_get(metrics_resp, "org_traffic", default=None)
+    )
+    pages_count = (
+        _safe_get(metrics_resp, "metrics", "pages", default=None)
+        or _safe_get(metrics_resp, "pages", default=None)
+    )
 
-    # Referring Domains
-    rd_resp = _api_get("site-explorer/refdomains-stats", common)
-    rd_total = _safe_get(rd_resp, "refdomains", "refdomains", default=None)
-    rd_dofollow = _safe_get(rd_resp, "refdomains", "dofollow_refdomains", default=None)
+    # Backlinks/Referring Domains 集計
+    rd_resp = _api_get("site-explorer/backlinks-stats", {**common, "date": today_iso})
+    rd_total = (
+        _safe_get(rd_resp, "metrics", "refdomains", default=None)
+        or _safe_get(rd_resp, "refdomains", default=None)
+        or _safe_get(rd_resp, "backlinks_stats", "refdomains", default=None)
+    )
+    rd_dofollow = (
+        _safe_get(rd_resp, "metrics", "refdomains_dofollow", default=None)
+        or _safe_get(rd_resp, "refdomains_dofollow", default=None)
+        or _safe_get(rd_resp, "backlinks_stats", "refdomains_dofollow", default=None)
+    )
 
     # Fallback to mock if API failed for the main fields
     if dr is None and sessions is None:
@@ -165,6 +192,7 @@ def get_top_keywords(domain: str, limit: int = 10) -> list[dict]:
         return _mock_top_keywords()
 
     target = _normalize_domain(domain)
+    today_iso = datetime.utcnow().strftime("%Y-%m-%d")
     resp = _api_get(
         "site-explorer/organic-keywords",
         {
@@ -172,11 +200,15 @@ def get_top_keywords(domain: str, limit: int = 10) -> list[dict]:
             "mode": "domain",
             "country": DEFAULT_COUNTRY,
             "limit": limit,
+            "date": today_iso,
             "order_by": "traffic:desc",
             "select": "keyword,volume,position,best_position_url",
         },
     )
-    keywords = _safe_get(resp, "keywords", default=None)
+    keywords = (
+        _safe_get(resp, "keywords", default=None)
+        or _safe_get(resp, "organic_keywords", default=None)
+    )
     if not keywords:
         logger.warning("Ahrefs API: 上位KW取得失敗、mock fallback")
         return _mock_top_keywords()
@@ -204,6 +236,7 @@ def get_top_pages(domain: str, limit: int = 10) -> list[dict]:
         return _mock_top_pages()
 
     target = _normalize_domain(domain)
+    today_iso = datetime.utcnow().strftime("%Y-%m-%d")
     resp = _api_get(
         "site-explorer/top-pages",
         {
@@ -211,11 +244,15 @@ def get_top_pages(domain: str, limit: int = 10) -> list[dict]:
             "mode": "domain",
             "country": DEFAULT_COUNTRY,
             "limit": limit,
+            "date": today_iso,
             "order_by": "traffic:desc",
             "select": "url,traffic",
         },
     )
-    pages = _safe_get(resp, "pages", default=None)
+    pages = (
+        _safe_get(resp, "pages", default=None)
+        or _safe_get(resp, "top_pages", default=None)
+    )
     if not pages:
         logger.warning("Ahrefs API: 上位ページ取得失敗、mock fallback")
         return _mock_top_pages()
@@ -244,6 +281,7 @@ def get_top_directories(domain: str, limit: int = 10) -> list[dict]:
         return _mock_top_directories()
 
     target = _normalize_domain(domain)
+    today_iso = datetime.utcnow().strftime("%Y-%m-%d")
     # 大量取得してディレクトリ単位に集計
     resp = _api_get(
         "site-explorer/top-pages",
@@ -252,11 +290,15 @@ def get_top_directories(domain: str, limit: int = 10) -> list[dict]:
             "mode": "domain",
             "country": DEFAULT_COUNTRY,
             "limit": 500,  # ディレクトリ集計のため広めに取得
+            "date": today_iso,
             "order_by": "traffic:desc",
             "select": "url,traffic",
         },
     )
-    pages = _safe_get(resp, "pages", default=None)
+    pages = (
+        _safe_get(resp, "pages", default=None)
+        or _safe_get(resp, "top_pages", default=None)
+    )
     if not pages:
         logger.warning("Ahrefs API: ディレクトリ集計用ページ取得失敗、mock fallback")
         return _mock_top_directories()
