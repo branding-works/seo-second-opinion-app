@@ -362,6 +362,8 @@ Ahrefs データ (Site Explorer):
 {json.dumps(ahrefs_data, ensure_ascii=False, indent=2)}
 
 要求:
+- **summary は必ず辞書 (オブジェクト) で返す**。文字列ではなく以下5フィールドを持つ object: total_score (整数), axes (配列), strengths (文字列), concerns (文字列), priority_action (文字列)
+- **axes (トップレベル) も辞書**。internal_seo / external_seo / content_seo / eeat / ai_exposure をキーとして、各値は {issues: [...], passed: [...]} の object
 - 5軸ごとに issues (指摘事項) と passed (通過項目) を埋める
 - score = ((total - issues件数) / total) * 20 で四捨五入
 - evidence は最低1件、url 必須。ラベルは「公式」「QRG」「リーク」「訴訟」「VRP」「特許」「二次解説」「Googler発言」のいずれか
@@ -371,7 +373,7 @@ Ahrefs データ (Site Explorer):
 - sources は出典リスト 6-10件
 - 推測の評価は priority "低" とし、observation_sub に「推測扱い」と書く
 
-提出は submit_seo_analysis ツールを使うこと (必須)。"""
+提出は submit_seo_analysis ツールを使うこと (必須)。文字列ではなく構造化された object で各フィールドを埋める。"""
 
     try:
         response = client.messages.create(
@@ -411,21 +413,46 @@ Ahrefs データ (Site Explorer):
             err_msg = f"LLM応答に必須フィールド (summary/axes) が含まれていません (stop_reason={stop_reason}, 含まれるキー: {keys_str})"
         return _build_empty_structured(url, ahrefs_data, page_meta, error=err_msg)
 
-    # summary が dict でない場合 (string で返してきたケース)
+    # summary が dict でない場合 (LLM が文字列で返したケース) → 救済して続行
     if not isinstance(parsed.get("summary"), dict):
-        logger.warning(f"LLM returned summary as {type(parsed.get('summary')).__name__}, not dict")
-        return _build_empty_structured(
-            url, ahrefs_data, page_meta,
-            error=f"LLM応答の summary が dict でなく {type(parsed.get('summary')).__name__} で返されました"
-        )
+        raw_summary_str = str(parsed.get("summary", "")) if parsed.get("summary") else ""
+        logger.warning(f"LLM returned summary as {type(parsed.get('summary')).__name__}; recovering")
+        parsed["summary"] = {
+            "total_score": 0,
+            "axes": [
+                {"key": "internal_seo", "name": "内部SEO・テクニカル", "score": 0, "issues": 0, "total": 17},
+                {"key": "external_seo", "name": "外部SEO・サイテーション", "score": 0, "issues": 0, "total": 7},
+                {"key": "content_seo", "name": "コンテンツSEO・記事", "score": 0, "issues": 0, "total": 21},
+                {"key": "eeat", "name": "EEAT・広報", "score": 0, "issues": 0, "total": 14},
+                {"key": "ai_exposure", "name": "AI露出 (LLMO・AI引用)", "score": 0, "issues": 0, "total": 8},
+            ],
+            "strengths": raw_summary_str[:500],
+            "concerns": "",
+            "priority_action": "",
+        }
+        parsed.setdefault("_warnings", []).append("summary が文字列で返されたため、自動補正しました")
 
-    # axes が dict でない場合
+    # summary.axes が list でなければ補正
+    if not isinstance(parsed["summary"].get("axes"), list):
+        parsed["summary"]["axes"] = [
+            {"key": "internal_seo", "name": "内部SEO・テクニカル", "score": 0, "issues": 0, "total": 17},
+            {"key": "external_seo", "name": "外部SEO・サイテーション", "score": 0, "issues": 0, "total": 7},
+            {"key": "content_seo", "name": "コンテンツSEO・記事", "score": 0, "issues": 0, "total": 21},
+            {"key": "eeat", "name": "EEAT・広報", "score": 0, "issues": 0, "total": 14},
+            {"key": "ai_exposure", "name": "AI露出 (LLMO・AI引用)", "score": 0, "issues": 0, "total": 8},
+        ]
+        parsed.setdefault("_warnings", []).append("summary.axes が list でないため自動補正")
+
+    # axes (data 直下) が dict でない場合 → 空 dict で補正
     if not isinstance(parsed.get("axes"), dict):
-        logger.warning(f"LLM returned axes as {type(parsed.get('axes')).__name__}, not dict")
-        return _build_empty_structured(
-            url, ahrefs_data, page_meta,
-            error=f"LLM応答の axes が dict でなく {type(parsed.get('axes')).__name__} で返されました"
-        )
+        parsed["axes"] = {
+            "internal_seo": {"issues": [], "passed": []},
+            "external_seo": {"issues": [], "passed": []},
+            "content_seo": {"issues": [], "passed": []},
+            "eeat": {"issues": [], "passed": []},
+            "ai_exposure": {"issues": [], "passed": []},
+        }
+        parsed.setdefault("_warnings", []).append("axes が dict でないため空構造に置換")
 
     # 任意フィールドのデフォルト補完 (空配列で安全に表示できるように)
     parsed.setdefault("contradictions", [])

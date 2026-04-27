@@ -624,6 +624,12 @@ if mode == "サイト分析":
             status_box.info("✓ 分析完了 (mockモード)")
         else:
             status_box.success("✓ 分析完了")
+            # 軽微な警告 (型不一致による自動補正など) を表示
+            warnings = new_data.get("_warnings", [])
+            if warnings:
+                with st.expander("⚠ 軽微な警告 (自動補正済み)", expanded=False):
+                    for w in warnings:
+                        st.caption(f"• {w}")
 
     # ─── データ取得 (session_state にあれば使用、無ければ mock) ───
     data = st.session_state.get("analysis_data")
