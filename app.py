@@ -723,12 +723,23 @@ if mode == "サイト分析":
         ahrefs = data.get("ahrefs", {})
         metrics = ahrefs.get("metrics", {})
         fetched_at = metrics.get("fetched_at", "")
+        api_status = metrics.get("api_status", "")
+        api_errors = metrics.get("api_errors", [])
         ahrefs_empty = bool(data.get("error")) or not metrics
 
         if ahrefs_empty:
             st.info("(分析データなし — 分析が完了するとここに Ahrefs サイト指標が表示されます)")
         else:
             st.caption(f"出典: Ahrefs Site Explorer / 2026-04-27時点 ({fetched_at})")
+            # API ステータス警告
+            if api_status and api_status != "live":
+                with st.expander(f"⚠ Ahrefs API ステータス: {api_status}", expanded=False):
+                    if api_errors:
+                        st.markdown("**API エラー詳細:**")
+                        for err in api_errors[:10]:
+                            st.code(err, language=None)
+                    else:
+                        st.caption("詳細エラーなし")
 
             kc1, kc2, kc3, kc4 = st.columns(4)
             with kc1:

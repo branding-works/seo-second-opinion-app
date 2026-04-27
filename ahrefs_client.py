@@ -36,6 +36,25 @@ def _get_headers() -> dict:
     }
 
 
+# 直近のAPIエラーを保持 (UI診断表示用)
+_LAST_API_ERRORS: list[str] = []
+
+
+def get_last_api_errors() -> list[str]:
+    """直近の API エラーリスト (UI 表示用)。"""
+    return list(_LAST_API_ERRORS)
+
+
+def reset_api_errors() -> None:
+    _LAST_API_ERRORS.clear()
+
+
+def _record_error(msg: str) -> None:
+    _LAST_API_ERRORS.append(msg)
+    if len(_LAST_API_ERRORS) > 20:
+        del _LAST_API_ERRORS[:10]
+
+
 def _api_get(path: str, params: dict) -> Optional[dict]:
     """Ahrefs API に GET リクエスト。エラー時は None を返す。"""
     url = f"{API_BASE}/{path.lstrip('/')}"
@@ -44,19 +63,26 @@ def _api_get(path: str, params: dict) -> Optional[dict]:
             url, headers=_get_headers(), params=params, timeout=DEFAULT_TIMEOUT
         )
         if response.status_code == 401:
-            logger.error(f"Ahrefs API: 認証エラー (token無効?). path={path}")
+            err = f"401 認証エラー (Ahrefs token無効/期限切れ): {path}"
+            logger.error(err)
+            _record_error(err)
             return None
         if response.status_code == 403:
-            logger.error(f"Ahrefs API: アクセス権限なし. path={path}")
+            err = f"403 アクセス権限なし (プラン不足の可能性): {path}"
+            logger.error(err)
+            _record_error(err)
             return None
         if response.status_code >= 400:
-            logger.warning(
-                f"Ahrefs API error {response.status_code}: {response.text[:200]}. path={path}"
-            )
+            body = response.text[:200].replace("\n", " ")
+            err = f"{response.status_code}: {body} ({path})"
+            logger.warning(f"Ahrefs API error: {err}")
+            _record_error(err)
             return None
         return response.json()
     except requests.RequestException as e:
-        logger.error(f"Ahrefs API リクエスト失敗: {e}. path={path}")
+        err = f"ネットワークエラー: {str(e)[:200]} ({path})"
+        logger.error(err)
+        _record_error(err)
         return None
 
 
@@ -87,8 +113,11 @@ def _safe_get(d: Optional[dict], *keys: str, default: Any = None) -> Any:
 
 def get_site_metrics(domain: str) -> dict:
     """サイト指標 (DR / 被リンク / 月間セッション)。"""
+    reset_api_errors()  # 新しい分析開始でクリア
     if not has_ahrefs_token():
-        return _mock_metrics(domain)
+        result = _mock_metrics(domain)
+        result["api_status"] = "AHREFS_API_TOKEN 未設定 (Render環境変数を確認)"
+        return result
 
     target = _normalize_domain(domain)
     common = {"target": target, "mode": "domain", "protocol": "both"}
@@ -113,7 +142,10 @@ def get_site_metrics(domain: str) -> dict:
     # Fallback to mock if API failed for the main fields
     if dr is None and sessions is None:
         logger.warning("Ahrefs API: 主要メトリクス取得失敗、mock fallback")
-        return _mock_metrics(target)
+        result = _mock_metrics(target)
+        result["api_status"] = "API失敗 → mockデータで表示"
+        result["api_errors"] = get_last_api_errors()
+        return result
 
     return {
         "domain_rating": dr if dr is not None else 0,
@@ -123,6 +155,7 @@ def get_site_metrics(domain: str) -> dict:
         "organic_pages_count": pages_count if pages_count is not None else 0,
         "domain": target,
         "fetched_at": "Ahrefs API v3 (live)",
+        "api_status": "live",
     }
 
 
