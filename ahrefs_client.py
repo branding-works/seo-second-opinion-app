@@ -39,6 +39,8 @@ def _get_headers() -> dict:
 
 # 直近のAPIエラーを保持 (UI診断表示用)
 _LAST_API_ERRORS: list[str] = []
+# 直近の生レスポンスを保持 (フィールド名診断用)
+_LAST_RAW_RESPONSES: dict = {}
 
 
 def get_last_api_errors() -> list[str]:
@@ -46,14 +48,24 @@ def get_last_api_errors() -> list[str]:
     return list(_LAST_API_ERRORS)
 
 
+def get_last_raw_responses() -> dict:
+    """直近の生レスポンス (UI 診断表示用)。"""
+    return dict(_LAST_RAW_RESPONSES)
+
+
 def reset_api_errors() -> None:
     _LAST_API_ERRORS.clear()
+    _LAST_RAW_RESPONSES.clear()
 
 
 def _record_error(msg: str) -> None:
     _LAST_API_ERRORS.append(msg)
     if len(_LAST_API_ERRORS) > 20:
         del _LAST_API_ERRORS[:10]
+
+
+def _record_raw(endpoint: str, response: Optional[dict]) -> None:
+    _LAST_RAW_RESPONSES[endpoint] = response
 
 
 def _api_get(path: str, params: dict) -> Optional[dict]:
@@ -124,14 +136,12 @@ def get_site_metrics(domain: str) -> dict:
     today_iso = datetime.utcnow().strftime("%Y-%m-%d")
     common = {"target": target, "mode": "domain", "protocol": "both"}
 
-    raw_responses: dict = {}  # 生レスポンスを診断用に保存
-
     # Domain Rating (date は YYYY-MM-DD 必須)
     dr_resp = _api_get(
         "site-explorer/domain-rating",
         {**common, "date": today_iso},
     )
-    raw_responses["domain-rating"] = dr_resp
+    _record_raw("domain-rating", dr_resp)
     dr = (
         _safe_get(dr_resp, "domain_rating", "domain_rating", default=None)
         or _safe_get(dr_resp, "domain_rating", default=None)
@@ -147,7 +157,7 @@ def get_site_metrics(domain: str) -> dict:
             "date": today_iso,
         },
     )
-    raw_responses["metrics"] = metrics_resp
+    _record_raw("metrics", metrics_resp)
     sessions = (
         _safe_get(metrics_resp, "metrics", "org_traffic", default=None)
         or _safe_get(metrics_resp, "org_traffic", default=None)
@@ -161,7 +171,7 @@ def get_site_metrics(domain: str) -> dict:
 
     # Backlinks/Referring Domains 集計 (フィールド名は live_refdomains が正)
     rd_resp = _api_get("site-explorer/backlinks-stats", {**common, "date": today_iso})
-    raw_responses["backlinks-stats"] = rd_resp
+    _record_raw("backlinks-stats", rd_resp)
     rd_total = (
         _safe_get(rd_resp, "metrics", "live_refdomains", default=None)
         or _safe_get(rd_resp, "metrics", "refdomains", default=None)
@@ -195,7 +205,6 @@ def get_site_metrics(domain: str) -> dict:
         "domain": target,
         "fetched_at": "Ahrefs API v3 (live)",
         "api_status": "live",
-        "_raw_responses": raw_responses,  # 診断用の生レスポンス
     }
 
 
@@ -214,13 +223,13 @@ def get_top_keywords(domain: str, limit: int = 10) -> list[dict]:
             "country": DEFAULT_COUNTRY,
             "limit": limit,
             "date": today_iso,
-            "order_by": "traffic:desc",
-            "select": "keyword,volume,position,best_position_url",
         },
     )
+    _record_raw("organic-keywords", resp)
     keywords = (
         _safe_get(resp, "keywords", default=None)
         or _safe_get(resp, "organic_keywords", default=None)
+        or _safe_get(resp, "data", default=None)
     )
     if not keywords:
         logger.warning("Ahrefs API: 上位KW取得失敗、mock fallback")
@@ -258,13 +267,13 @@ def get_top_pages(domain: str, limit: int = 10) -> list[dict]:
             "country": DEFAULT_COUNTRY,
             "limit": limit,
             "date": today_iso,
-            "order_by": "traffic:desc",
-            "select": "url,traffic",
         },
     )
+    _record_raw("top-pages", resp)
     pages = (
         _safe_get(resp, "pages", default=None)
         or _safe_get(resp, "top_pages", default=None)
+        or _safe_get(resp, "data", default=None)
     )
     if not pages:
         logger.warning("Ahrefs API: 上位ページ取得失敗、mock fallback")
@@ -304,13 +313,13 @@ def get_top_directories(domain: str, limit: int = 10) -> list[dict]:
             "country": DEFAULT_COUNTRY,
             "limit": 500,  # ディレクトリ集計のため広めに取得
             "date": today_iso,
-            "order_by": "traffic:desc",
-            "select": "url,traffic",
         },
     )
+    _record_raw("top-pages-bulk-for-directories", resp)
     pages = (
         _safe_get(resp, "pages", default=None)
         or _safe_get(resp, "top_pages", default=None)
+        or _safe_get(resp, "data", default=None)
     )
     if not pages:
         logger.warning("Ahrefs API: ディレクトリ集計用ページ取得失敗、mock fallback")

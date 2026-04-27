@@ -19,6 +19,7 @@ from ahrefs_client import (
     get_top_keywords,
     get_top_pages,
     get_top_directories,
+    get_last_raw_responses,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,11 +46,17 @@ def is_mock_mode() -> bool:
 def _gather_ahrefs_data(url: str) -> dict:
     """Ahrefs クライアントから対象ドメインの全データを集める。"""
     domain = urlparse(url).netloc or url
+    metrics = get_site_metrics(domain)  # ここで raw_responses がクリア&再収集される
+    top_kw = get_top_keywords(domain)
+    top_pg = get_top_pages(domain)
+    top_dir = get_top_directories(domain)
+    # 全エンドポイントの生レスポンスをmetricsに注入 (UI診断用)
+    metrics["_raw_responses"] = get_last_raw_responses()
     return {
-        "metrics": get_site_metrics(domain),
-        "top_keywords": get_top_keywords(domain),
-        "top_pages": get_top_pages(domain),
-        "top_directories": get_top_directories(domain),
+        "metrics": metrics,
+        "top_keywords": top_kw,
+        "top_pages": top_pg,
+        "top_directories": top_dir,
         "domain": domain,
     }
 
