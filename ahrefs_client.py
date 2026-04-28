@@ -223,6 +223,8 @@ def get_top_keywords(domain: str, limit: int = 10) -> list[dict]:
             "country": DEFAULT_COUNTRY,
             "limit": limit,
             "date": today_iso,
+            "order_by": "traffic:desc",
+            "select": "keyword,volume,position,traffic,best_position_url",
         },
     )
     _record_raw("organic-keywords", resp)
@@ -267,6 +269,8 @@ def get_top_pages(domain: str, limit: int = 10) -> list[dict]:
             "country": DEFAULT_COUNTRY,
             "limit": limit,
             "date": today_iso,
+            "order_by": "sum_traffic:desc",
+            "select": "url,sum_traffic",
         },
     )
     _record_raw("top-pages", resp)
@@ -289,7 +293,7 @@ def get_top_pages(domain: str, limit: int = 10) -> list[dict]:
             url_path = url_full or "/"
         result.append({
             "url": url_path,
-            "estimated_sessions": p.get("traffic", 0),
+            "estimated_sessions": p.get("sum_traffic", p.get("traffic", 0)),
         })
     return result
 
@@ -313,6 +317,8 @@ def get_top_directories(domain: str, limit: int = 10) -> list[dict]:
             "country": DEFAULT_COUNTRY,
             "limit": 500,  # ディレクトリ集計のため広めに取得
             "date": today_iso,
+            "order_by": "sum_traffic:desc",
+            "select": "url,sum_traffic",
         },
     )
     _record_raw("top-pages-bulk-for-directories", resp)
@@ -330,7 +336,7 @@ def get_top_directories(domain: str, limit: int = 10) -> list[dict]:
     total_traffic = 0
     for p in pages:
         url_full = p.get("url", "")
-        traffic = p.get("traffic", 0)
+        traffic = p.get("sum_traffic", p.get("traffic", 0))
         total_traffic += traffic
         # 第一階層のディレクトリを取得
         if url_full.startswith("http"):
