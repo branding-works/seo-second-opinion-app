@@ -532,8 +532,8 @@ def _render_axis_content(axis_data: dict):
                 [f"[{e.get('label','')}]({e.get('url','#')})" for e in it.get("evidence", [])]
             )
             check_url = it.get("check_url", "")
-            check_label = check_url.split("/", 3)[-1] if check_url.startswith("http") and "/" in check_url[8:] else check_url
-            check_md = f"[/{check_label}]({check_url})" if check_url else ""
+            # 確認URL は省略せずフル表示
+            check_md = f"[{check_url}]({check_url})" if check_url else ""
             priority = it.get("priority", "")
             table += f"| {obs_full} | {it.get('action','')} | {ev} | {check_md} | {priority} |\n"
         st.markdown(table)
@@ -838,8 +838,14 @@ if mode == "サイト分析":
                 kw_table = "| KW | 月間 | 順位 | 獲得URL |\n|---|---|---|---|\n"
                 for k in kw_data:
                     ku = k.get("url", "")
-                    kw_url = f"https://{domain_for_links}{ku}" if ku.startswith("/") else (ku or "#")
-                    kw_table += f"| {k.get('keyword','')} | {k.get('volume',0):,} | {k.get('position',0)} | [{ku}]({kw_url}) |\n"
+                    # 既にフルURLが入っている。path のみの場合はドメインを補完。
+                    if ku.startswith("http"):
+                        kw_url = ku
+                    elif ku.startswith("/"):
+                        kw_url = f"https://{domain_for_links}{ku}"
+                    else:
+                        kw_url = ku or "#"
+                    kw_table += f"| {k.get('keyword','')} | {k.get('volume',0):,} | {k.get('position',0)} | [{kw_url}]({kw_url}) |\n"
                 st.markdown(kw_table)
             else:
                 st.caption("(データなし)")
@@ -850,11 +856,16 @@ if mode == "サイト分析":
                 page_table = "| URL | 流入貢献KW | 検索Vol | 推定セッション/月 |\n|---|---|---|---|\n"
                 for p in page_data:
                     pu = p.get("url", "")
-                    p_url = f"https://{domain_for_links}{pu}" if pu.startswith("/") else (pu or "#")
+                    if pu.startswith("http"):
+                        p_url = pu
+                    elif pu.startswith("/"):
+                        p_url = f"https://{domain_for_links}{pu}"
+                    else:
+                        p_url = pu or "#"
                     top_kw = p.get("top_keyword") or "—"
                     top_vol = p.get("top_keyword_volume", 0)
                     vol_disp = f"{top_vol:,}" if top_vol else "—"
-                    page_table += f"| [{pu}]({p_url}) | {top_kw} | {vol_disp} | {p.get('estimated_sessions',0):,} |\n"
+                    page_table += f"| [{p_url}]({p_url}) | {top_kw} | {vol_disp} | {p.get('estimated_sessions',0):,} |\n"
                 st.markdown(page_table)
             else:
                 st.caption("(データなし)")

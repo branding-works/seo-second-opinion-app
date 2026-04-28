@@ -252,11 +252,6 @@ def get_top_keywords(domain: str, limit: int = 10) -> list[dict]:
     result = []
     for k in keywords[:limit]:
         url_full = k.get("best_position_url") or k.get("url", "")
-        # ドメイン部分を除去してパスのみに
-        if url_full.startswith("http"):
-            url_path = "/" + url_full.split("/", 3)[-1] if "/" in url_full[8:] else "/"
-        else:
-            url_path = url_full or "/"
         # position は best_position / current_position / position の順で取得
         position = (
             k.get("best_position")
@@ -270,7 +265,7 @@ def get_top_keywords(domain: str, limit: int = 10) -> list[dict]:
             "keyword": k.get("keyword", ""),
             "volume": k.get("volume", 0),
             "position": position,
-            "url": url_path,
+            "url": url_full,  # フルURL のまま保持
             "traffic": traffic,
         })
     return result
@@ -308,13 +303,8 @@ def get_top_pages(domain: str, limit: int = 10) -> list[dict]:
     result = []
     for p in pages[:limit]:
         url_full = p.get("url", "")
-        if url_full.startswith("http"):
-            parts = url_full.split("/", 3)
-            url_path = "/" + parts[-1] if len(parts) > 3 else "/"
-        else:
-            url_path = url_full or "/"
         result.append({
-            "url": url_path,
+            "url": url_full,  # フルURL のまま保持
             "estimated_sessions": p.get("sum_traffic", p.get("traffic", 0)),
         })
     return result
