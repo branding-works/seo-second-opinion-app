@@ -547,12 +547,19 @@ def _render_axis_content(axis_data: dict):
         st.markdown("#### 指摘事項")
         table = "| 観点 | 施策 | エビデンス | 確認URL | 優先度 |\n|---|---|---|---|---|\n"
         for it in issues:
+            if not isinstance(it, dict):
+                table += f"| {it} | — | — | — | — |\n"
+                continue
             obs = it.get("observation", "")
             sub = it.get("observation_sub", "")
             obs_full = f"{obs} ({sub})" if sub else obs
-            ev = " ".join(
-                [f"[{e.get('label','')}]({e.get('url','#')})" for e in it.get("evidence", [])]
-            )
+            ev_parts = []
+            for e in it.get("evidence", []) or []:
+                if isinstance(e, dict):
+                    ev_parts.append(f"[{e.get('label','')}]({e.get('url','#')})")
+                else:
+                    ev_parts.append(str(e))
+            ev = " ".join(ev_parts)
             check_url = it.get("check_url", "")
             # 確認URL は省略せずフル表示
             check_md = f"[{check_url}]({check_url})" if check_url else ""
@@ -566,6 +573,9 @@ def _render_axis_content(axis_data: dict):
         st.markdown(f"#### ✓ 問題のなかった項目 ({len(passed)}件)")
         items = []
         for p in passed:
+            if not isinstance(p, dict):
+                items.append(f"- ✓ {p}")
+                continue
             name = p.get("name", "")
             url_p = p.get("url", "")
             if url_p:
@@ -805,13 +815,15 @@ if mode == "サイト分析":
         st.markdown("### 実施にあたって要検討施策")
         donts = data.get("donts", [])
         if donts:
-            donts_md = "\n".join(
-                [
+            donts_lines = []
+            for d in donts:
+                if not isinstance(d, dict):
+                    donts_lines.append(f"- {d}")
+                    continue
+                donts_lines.append(
                     f"- **{d.get('name','')}** — {d.get('reason','')} [{d.get('evidence_label','')}]({d.get('evidence_url','#')})"
-                    for d in donts
-                ]
-            )
-            st.warning(donts_md)
+                )
+            st.warning("\n".join(donts_lines))
 
     with tab2:
         st.markdown("#### Ahrefs サイト指標")
@@ -938,6 +950,11 @@ if mode == "サイト分析":
             if contradictions:
                 contra_table = "| Googleの公式メッセージ | 内部実装の事実 | 裏付け資料 |\n|---|---|---|\n"
                 for c in contradictions:
+                    # LLM が稀にスキーマ無視で string を返すケースに耐える
+                    if not isinstance(c, dict):
+                        pub = str(c).replace("|", "\\|")
+                        contra_table += f"| {pub} | — | — |\n"
+                        continue
                     pub = str(c.get("public", "")).replace("|", "\\|")
                     intl = str(c.get("internal", "")).replace("|", "\\|")
                     src = f"[{c.get('source_label','')}]({c.get('source_url','#')})"
@@ -950,6 +967,9 @@ if mode == "サイト分析":
             if sources:
                 src_lines = []
                 for i, s in enumerate(sources, 1):
+                    if not isinstance(s, dict):
+                        src_lines.append(f"{i}. {s}")
+                        continue
                     src_lines.append(
                         f"{i}. [{s.get('text','')}]({s.get('url','#')}) `[{s.get('label','')}]`"
                     )

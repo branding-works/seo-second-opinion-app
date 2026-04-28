@@ -69,12 +69,12 @@ def _record_raw(endpoint: str, response: Optional[dict]) -> None:
     _LAST_RAW_RESPONSES[endpoint] = response
 
 
-def _api_get(path: str, params: dict) -> Optional[dict]:
+def _api_get(path: str, params: dict, timeout: int = DEFAULT_TIMEOUT) -> Optional[dict]:
     """Ahrefs API に GET リクエスト。エラー時は None を返す。"""
     url = f"{API_BASE}/{path.lstrip('/')}"
     try:
         response = requests.get(
-            url, headers=_get_headers(), params=params, timeout=DEFAULT_TIMEOUT
+            url, headers=_get_headers(), params=params, timeout=timeout
         )
         if response.status_code == 401:
             err = f"401 認証エラー (Ahrefs token無効/期限切れ): {path}"
@@ -144,13 +144,17 @@ def resolve_target_and_mode(url: str, ui_mode: str) -> tuple[str, str]:
 
 # ─── 公開関数 ──────────────────────────────────────────
 
-def _count_dofollow_refdomains(domain: str, max_count: int = 1000) -> Optional[int]:
+def _count_dofollow_refdomains(domain: str, max_count: int = 2000) -> Optional[int]:
     """非スパム & dofollow リンクのある refdomain 数を referring-domains で取得。
 
     Ahrefs `backlinks-stats` には dofollow 内訳がないので、`referring-domains` で
     `dofollow_links > 0 AND is_spam = false` のフィルタを適用して件数を数える。
 
-    Returns: 件数(整数)。API 失敗時 None。max_count を超える場合は max_count を返す。
+    `history=live` で live (現存) refdomains のみに限定する。デフォルトの all_time
+    にすると過去の lost も含むため処理が重くなり、Ahrefs 側で 30秒タイムアウトに
+    かかりやすい (live_refdomains の数倍をスキャンする)。
+
+    Returns: 件数(整数)。API 失敗時 None。
     """
     where_filter = json.dumps({
         "and": [
@@ -158,14 +162,19 @@ def _count_dofollow_refdomains(domain: str, max_count: int = 1000) -> Optional[i
             {"field": "is_spam", "is": ["eq", False]},
         ]
     })
-    resp = _api_get("site-explorer/referring-domains", {
-        "target": domain,
-        "mode": "domain",
-        "protocol": "both",
-        "select": "domain",
-        "where": where_filter,
-        "limit": max_count,
-    })
+    resp = _api_get(
+        "site-explorer/referring-domains",
+        {
+            "target": domain,
+            "mode": "domain",
+            "protocol": "both",
+            "history": "live",
+            "select": "domain",
+            "where": where_filter,
+            "limit": max_count,
+        },
+        timeout=90,  # where フィルタは重いのでデフォルト30秒では足りない
+    )
     _record_raw("referring-domains-dofollow", resp)
     if not resp:
         return None
