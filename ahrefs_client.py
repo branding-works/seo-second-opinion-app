@@ -11,6 +11,8 @@ API ドキュメント: https://docs.ahrefs.com/docs/api/reference/
 import os
 import json
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Optional, Any
 
@@ -38,35 +40,41 @@ def _get_headers() -> dict:
     }
 
 
-# 直近のAPIエラーを保持 (UI診断表示用)
+# 直近のAPIエラー / 生レスポンスを保持 (UI 診断表示用)
+# 並列化のため Lock で保護する。
 _LAST_API_ERRORS: list[str] = []
-# 直近の生レスポンスを保持 (フィールド名診断用)
 _LAST_RAW_RESPONSES: dict = {}
+_STATE_LOCK = threading.Lock()
 
 
 def get_last_api_errors() -> list[str]:
     """直近の API エラーリスト (UI 表示用)。"""
-    return list(_LAST_API_ERRORS)
+    with _STATE_LOCK:
+        return list(_LAST_API_ERRORS)
 
 
 def get_last_raw_responses() -> dict:
     """直近の生レスポンス (UI 診断表示用)。"""
-    return dict(_LAST_RAW_RESPONSES)
+    with _STATE_LOCK:
+        return dict(_LAST_RAW_RESPONSES)
 
 
 def reset_api_errors() -> None:
-    _LAST_API_ERRORS.clear()
-    _LAST_RAW_RESPONSES.clear()
+    with _STATE_LOCK:
+        _LAST_API_ERRORS.clear()
+        _LAST_RAW_RESPONSES.clear()
 
 
 def _record_error(msg: str) -> None:
-    _LAST_API_ERRORS.append(msg)
-    if len(_LAST_API_ERRORS) > 20:
-        del _LAST_API_ERRORS[:10]
+    with _STATE_LOCK:
+        _LAST_API_ERRORS.append(msg)
+        if len(_LAST_API_ERRORS) > 20:
+            del _LAST_API_ERRORS[:10]
 
 
 def _record_raw(endpoint: str, response: Optional[dict]) -> None:
-    _LAST_RAW_RESPONSES[endpoint] = response
+    with _STATE_LOCK:
+        _LAST_RAW_RESPONSES[endpoint] = response
 
 
 def _api_get(path: str, params: dict, timeout: int = DEFAULT_TIMEOUT) -> Optional[dict]:
@@ -145,14 +153,14 @@ def resolve_target_and_mode(url: str, ui_mode: str) -> tuple[str, str]:
 # ─── 公開関数 ──────────────────────────────────────────
 
 def _count_dofollow_refdomains(domain: str, max_count: int = 2000) -> Optional[int]:
-    """非スパム & dofollow リンクのある refdomain 数を referring-domains で取得。
+    """非スパム & dofollow リンクのある refdomain 数を取得。
 
-    Ahrefs `backlinks-stats` には dofollow 内訳がないので、`referring-domains` で
-    `dofollow_links > 0 AND is_spam = false` のフィルタを適用して件数を数える。
+    正しいエンドポイントは `/site-explorer/refdomains` (Ahrefs API v3)。
+    `referring-domains` は 404 を返す古い別名。
 
-    `history=live` で live (現存) refdomains のみに限定する。デフォルトの all_time
-    にすると過去の lost も含むため処理が重くなり、Ahrefs 側で 30秒タイムアウトに
-    かかりやすい (live_refdomains の数倍をスキャンする)。
+    `backlinks-stats` には dofollow 内訳がないので、`refdomains` を
+    `dofollow_links > 0 AND is_spam = false` でフィルタして件数を数える。
+    `history=live` で live refdomains のみに限定して処理を軽くする。
 
     Returns: 件数(整数)。API 失敗時 None。
     """
@@ -163,7 +171,7 @@ def _count_dofollow_refdomains(domain: str, max_count: int = 2000) -> Optional[i
         ]
     })
     resp = _api_get(
-        "site-explorer/referring-domains",
+        "site-explorer/refdomains",
         {
             "target": domain,
             "mode": "domain",
@@ -173,9 +181,9 @@ def _count_dofollow_refdomains(domain: str, max_count: int = 2000) -> Optional[i
             "where": where_filter,
             "limit": max_count,
         },
-        timeout=90,  # where フィルタは重いのでデフォルト30秒では足りない
+        timeout=60,  # where フィルタは重め。失敗時はメイン処理を止めない
     )
-    _record_raw("referring-domains-dofollow", resp)
+    _record_raw("refdomains-dofollow", resp)
     if not resp:
         return None
     rows = _safe_get(resp, "refdomains", default=None) or _safe_get(resp, "data", default=None)
@@ -189,8 +197,10 @@ def get_site_metrics(target: str, mode: str = "domain") -> dict:
 
     target: フルURL or ドメイン (mode に応じる)
     mode: domain / exact / prefix / subdomains
+
+    内部の 4 API 呼び出しは ThreadPoolExecutor で並列実行する (直列だと
+    dofollow refdomains が 60秒近くかかるためトータルが極端に重くなる)。
     """
-    reset_api_errors()  # 新しい分析開始でクリア
     if not has_ahrefs_token():
         result = _mock_metrics(target)
         result["api_status"] = "AHREFS_API_TOKEN 未設定 (Render環境変数を確認)"
@@ -205,28 +215,45 @@ def get_site_metrics(target: str, mode: str = "domain") -> dict:
     domain_target = _normalize_domain(target)
     domain_common = {"target": domain_target, "mode": "domain", "protocol": "both"}
 
-    # Domain Rating (date は YYYY-MM-DD 必須)
-    dr_resp = _api_get(
-        "site-explorer/domain-rating",
-        {**domain_common, "date": today_iso},
-    )
-    _record_raw("domain-rating", dr_resp)
+    def _fetch_dr() -> Optional[dict]:
+        resp = _api_get("site-explorer/domain-rating", {**domain_common, "date": today_iso})
+        _record_raw("domain-rating", resp)
+        return resp
+
+    def _fetch_traffic() -> Optional[dict]:
+        resp = _api_get(
+            "site-explorer/metrics",
+            {
+                **common,
+                "country": DEFAULT_COUNTRY,
+                "volume_mode": "monthly",
+                "date": today_iso,
+            },
+        )
+        _record_raw("metrics", resp)
+        return resp
+
+    def _fetch_backlinks() -> Optional[dict]:
+        resp = _api_get("site-explorer/backlinks-stats", {**domain_common, "date": today_iso})
+        _record_raw("backlinks-stats", resp)
+        return resp
+
+    # 4つの API を並列呼び出し (合計時間 = 一番遅い1本に律速される)
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        f_dr = executor.submit(_fetch_dr)
+        f_traffic = executor.submit(_fetch_traffic)
+        f_backlinks = executor.submit(_fetch_backlinks)
+        f_dofollow = executor.submit(_count_dofollow_refdomains, domain_target)
+
+        dr_resp = f_dr.result()
+        metrics_resp = f_traffic.result()
+        rd_resp = f_backlinks.result()
+        rd_dofollow = f_dofollow.result()
+
     dr = (
         _safe_get(dr_resp, "domain_rating", "domain_rating", default=None)
         or _safe_get(dr_resp, "domain_rating", default=None)
     )
-
-    # Traffic / Organic metrics (date 必須) — ユーザー選択モードを尊重
-    metrics_resp = _api_get(
-        "site-explorer/metrics",
-        {
-            **common,
-            "country": DEFAULT_COUNTRY,
-            "volume_mode": "monthly",
-            "date": today_iso,
-        },
-    )
-    _record_raw("metrics", metrics_resp)
     sessions = (
         _safe_get(metrics_resp, "metrics", "org_traffic", default=None)
         or _safe_get(metrics_resp, "org_traffic", default=None)
@@ -237,10 +264,6 @@ def get_site_metrics(target: str, mode: str = "domain") -> dict:
         or _safe_get(metrics_resp, "metrics", "indexed_pages", default=None)
         or _safe_get(metrics_resp, "pages", default=None)
     )
-
-    # Backlinks/Referring Domains 集計 — 必ずドメイン単位 (mode=domain)
-    rd_resp = _api_get("site-explorer/backlinks-stats", {**domain_common, "date": today_iso})
-    _record_raw("backlinks-stats", rd_resp)
     rd_total = (
         _safe_get(rd_resp, "metrics", "live_refdomains", default=None)
         or _safe_get(rd_resp, "metrics", "refdomains", default=None)
@@ -249,10 +272,6 @@ def get_site_metrics(target: str, mode: str = "domain") -> dict:
         or _safe_get(rd_resp, "refdomains", default=None)
         or _safe_get(rd_resp, "backlinks_stats", "refdomains", default=None)
     )
-
-    # 価値あり (dofollow かつ 非スパム) のリンク元ドメイン数。
-    # Ahrefs `backlinks-stats` には dofollow 内訳がないので、`referring-domains` を where 句でフィルタしてカウントする。
-    rd_dofollow = _count_dofollow_refdomains(domain_target)
 
     # Fallback to mock if API failed for the main fields
     if dr is None and sessions is None:

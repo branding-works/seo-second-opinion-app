@@ -9,6 +9,7 @@ import os
 import json
 import re
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 from urllib.parse import urlparse
 import requests
@@ -21,6 +22,7 @@ from ahrefs_client import (
     get_top_directories,
     get_last_raw_responses,
     resolve_target_and_mode,
+    reset_api_errors,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,13 +47,27 @@ def is_mock_mode() -> bool:
 
 
 def _gather_ahrefs_data(url: str, url_match_mode: str = "ドメイン一致") -> dict:
-    """Ahrefs クライアントから対象データを集める。url_match_mode で取得範囲を制御。"""
+    """Ahrefs クライアントから対象データを集める。url_match_mode で取得範囲を制御。
+
+    4つの取得関数を並列実行。`get_site_metrics` 内部の 4 API も並列なので、
+    最終的に 7 本の HTTP リクエストが並列で走る (合計時間 = 一番遅い1本)。
+    """
     domain = urlparse(url).netloc or url
     target, mode = resolve_target_and_mode(url, url_match_mode)
-    metrics = get_site_metrics(target, mode)  # ここで raw_responses がクリア&再収集される
-    top_kw = get_top_keywords(target, mode)
-    top_pg = get_top_pages(target, mode)
-    top_dir = get_top_directories(target, mode)
+
+    # raw_responses / api_errors は分析開始時に1回だけクリア (各関数内では reset しない前提)
+    reset_api_errors()
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        f_metrics = executor.submit(get_site_metrics, target, mode)
+        f_top_kw = executor.submit(get_top_keywords, target, mode)
+        f_top_pg = executor.submit(get_top_pages, target, mode)
+        f_top_dir = executor.submit(get_top_directories, target, mode)
+
+        metrics = f_metrics.result()
+        top_kw = f_top_kw.result()
+        top_pg = f_top_pg.result()
+        top_dir = f_top_dir.result()
 
     # 流入URL に最有力KWを紐付け (organic-keywords の best_position_url で照合)
     url_to_kw: dict[str, dict] = {}
@@ -420,8 +436,11 @@ Ahrefs データ (Site Explorer):
     try:
         response = client.messages.create(
             model=get_model(),
-            max_tokens=16000,  # 大きなレスポンスに対応 (出力切れを防止)
-            system=SYSTEM_PROMPT,
+            # 出力上限。実出力は通常 6000~9000 トークン。12000 で安全マージン確保。
+            max_tokens=12000,
+            # システムプロンプトを ephemeral キャッシュ (5分TTL)。同セッション内の
+            # 2回目以降の分析呼び出しで読み込み時間とコストが大幅削減される。
+            system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
             tools=[ANALYSIS_TOOL],
             tool_choice={"type": "tool", "name": "submit_seo_analysis"},
             messages=[{"role": "user", "content": user_message}],
@@ -564,7 +583,7 @@ URL一致モード: {url_match_mode}
     response = client.messages.create(
         model=get_model(),
         max_tokens=8000,
-        system=SYSTEM_PROMPT,
+        system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": user_message}],
     )
     return response.content[0].text
@@ -596,7 +615,7 @@ def review_strategy(strategy_text: str, related_url: str = "") -> str:
     response = client.messages.create(
         model=get_model(),
         max_tokens=4000,
-        system=SYSTEM_PROMPT,
+        system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": user_message}],
     )
     return response.content[0].text
@@ -626,7 +645,7 @@ def answer_question(question: str) -> str:
     response = client.messages.create(
         model=get_model(),
         max_tokens=4000,
-        system=SYSTEM_PROMPT,
+        system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": user_message}],
     )
     return response.content[0].text

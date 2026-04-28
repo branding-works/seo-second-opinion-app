@@ -590,10 +590,16 @@ if mode == "サイト分析":
     # ─── 実行ボタン押下時: データ更新 ───
     if run_btn:
         st.markdown("---")
-        # 想定総時間 (秒) — 300秒 = 5分を 100% とする
-        ESTIMATED_SECONDS = 300
+        # 想定総時間 (秒)。Ahrefs API 並列化 + Sonnet + max_tokens 削減後の見込み。
+        ESTIMATED_SECONDS = 90
+        # 想定処理ステージ (累積秒数, ラベル)。プログレスバーの体感UX用。
+        # 実際の処理境界とは厳密には一致しないが、ユーザーに「今何をしているか」を伝える
+        STAGES = [
+            (15, "🔍 Ahrefs サイトデータ取得中..."),
+            (90, "🧠 AI による多軸スコアリング中 (Sonnet 4.6)..."),
+        ]
 
-        progress_bar = st.progress(0, text=f"調査分析中  想定5分程度  ·  残り約 {ESTIMATED_SECONDS}秒")
+        progress_bar = st.progress(0, text=f"調査分析中  想定 {ESTIMATED_SECONDS}秒")
         status_box = st.empty()
 
         # 別スレッドで分析実行 → メインで進捗バー更新
@@ -614,15 +620,21 @@ if mode == "サイト分析":
         thread = threading.Thread(target=_worker, daemon=True)
         thread.start()
 
-        # 進捗バーを 1秒ごと更新 (300秒で 100% に到達)
+        # 進捗バーを 1秒ごと更新 (ESTIMATED_SECONDS で 100% に到達)
         start = time.time()
         while thread.is_alive():
             elapsed = time.time() - start
             pct = min(99, int(elapsed / ESTIMATED_SECONDS * 100))
             remaining = max(0, ESTIMATED_SECONDS - int(elapsed))
+            # 経過時間に応じてステージラベルを切り替え
+            stage_label = STAGES[-1][1]
+            for boundary, label in STAGES:
+                if elapsed <= boundary:
+                    stage_label = label
+                    break
             progress_bar.progress(
                 pct,
-                text=f"調査分析中  想定5分程度  ·  残り約 {remaining}秒",
+                text=f"{stage_label}  ·  残り約 {remaining}秒",
             )
             time.sleep(1.0)
 
