@@ -380,12 +380,6 @@ with st.sidebar:
 
     st.divider()
 
-    with st.expander("追加データ", expanded=False):
-        st.checkbox("Ahrefs MCPでサイト指標取得", value=True, key="use_ahrefs")
-        st.checkbox("Web上でエビデンス検証", value=True, key="use_web")
-        st.checkbox("GSCデータ連携", value=False, key="use_gsc")
-        st.checkbox("GA4 organic連携", value=False, key="use_ga4")
-
     with st.expander("参照する資料", expanded=False):
         st.checkbox("Google特許", value=True)
         st.checkbox("2024-05 リーク資料", value=True)
