@@ -215,24 +215,36 @@ def get_top_keywords(domain: str, limit: int = 10) -> list[dict]:
 
     target = _normalize_domain(domain)
     today_iso = datetime.utcnow().strftime("%Y-%m-%d")
-    resp = _api_get(
-        "site-explorer/organic-keywords",
-        {
+    # 複数フィールド名を順次試す (Ahrefs API v3 の正しい組み合わせを探す)
+    field_attempts = [
+        ("keyword,volume,best_position,sum_traffic,best_position_url", "sum_traffic:desc"),
+        ("keyword,volume,current_position,sum_traffic,best_position_url", "sum_traffic:desc"),
+        ("keyword,volume,best_position", None),  # 最小限・order_by なし
+        ("keyword,volume", None),  # 究極の最小
+    ]
+    keywords = None
+    for select, order_by in field_attempts:
+        params = {
             "target": target,
             "mode": "domain",
             "country": DEFAULT_COUNTRY,
             "limit": limit,
             "date": today_iso,
-            "order_by": "traffic:desc",
-            "select": "keyword,volume,position,traffic,best_position_url",
-        },
-    )
-    _record_raw("organic-keywords", resp)
-    keywords = (
-        _safe_get(resp, "keywords", default=None)
-        or _safe_get(resp, "organic_keywords", default=None)
-        or _safe_get(resp, "data", default=None)
-    )
+            "select": select,
+        }
+        if order_by:
+            params["order_by"] = order_by
+        resp = _api_get("site-explorer/organic-keywords", params)
+        _record_raw("organic-keywords", resp)
+        keywords = (
+            _safe_get(resp, "keywords", default=None)
+            or _safe_get(resp, "organic_keywords", default=None)
+            or _safe_get(resp, "data", default=None)
+        )
+        if keywords:
+            logger.info(f"organic-keywords: select='{select}' で成功")
+            break
+
     if not keywords:
         logger.warning("Ahrefs API: 上位KW取得失敗、mock fallback")
         return _mock_top_keywords()
@@ -245,11 +257,21 @@ def get_top_keywords(domain: str, limit: int = 10) -> list[dict]:
             url_path = "/" + url_full.split("/", 3)[-1] if "/" in url_full[8:] else "/"
         else:
             url_path = url_full or "/"
+        # position は best_position / current_position / position の順で取得
+        position = (
+            k.get("best_position")
+            or k.get("current_position")
+            or k.get("position")
+            or 0
+        )
+        # traffic は sum_traffic / traffic の順
+        traffic = k.get("sum_traffic", k.get("traffic", 0))
         result.append({
             "keyword": k.get("keyword", ""),
             "volume": k.get("volume", 0),
-            "position": k.get("position", 0),
+            "position": position,
             "url": url_path,
+            "traffic": traffic,
         })
     return result
 
