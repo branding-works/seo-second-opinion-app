@@ -51,6 +51,26 @@ def _gather_ahrefs_data(url: str) -> dict:
     top_pg = get_top_pages(domain)
     top_dir = get_top_directories(domain)
 
+    # 流入URL に最有力KWを紐付け (organic-keywords の best_position_url で照合)
+    url_to_kw: dict[str, dict] = {}
+    for kw in top_kw:
+        kw_url = kw.get("url", "")
+        if kw_url and kw_url not in url_to_kw:
+            # top_kw は traffic 降順なので、最初に見つかった = 最有力
+            url_to_kw[kw_url] = {
+                "keyword": kw.get("keyword", ""),
+                "volume": kw.get("volume", 0),
+            }
+    for pg in top_pg:
+        pg_url = pg.get("url", "")
+        match = url_to_kw.get(pg_url)
+        if match:
+            pg["top_keyword"] = match["keyword"]
+            pg["top_keyword_volume"] = match["volume"]
+        else:
+            pg["top_keyword"] = ""
+            pg["top_keyword_volume"] = 0
+
     # ページ数を top-pages の bulk 取得結果から推定
     # (metrics エンドポイントは pages count を返さないため)
     raw = get_last_raw_responses()

@@ -847,16 +847,19 @@ if mode == "サイト分析":
             st.markdown("#### 流入URL 上位10")
             page_data = ahrefs.get("top_pages", [])
             if page_data:
-                page_table = "| URL | 推定セッション/月 |\n|---|---|\n"
+                page_table = "| URL | 流入貢献KW | 検索Vol | 推定セッション/月 |\n|---|---|---|---|\n"
                 for p in page_data:
                     pu = p.get("url", "")
                     p_url = f"https://{domain_for_links}{pu}" if pu.startswith("/") else (pu or "#")
-                    page_table += f"| [{pu}]({p_url}) | {p.get('estimated_sessions',0):,} |\n"
+                    top_kw = p.get("top_keyword") or "—"
+                    top_vol = p.get("top_keyword_volume", 0)
+                    vol_disp = f"{top_vol:,}" if top_vol else "—"
+                    page_table += f"| [{pu}]({p_url}) | {top_kw} | {vol_disp} | {p.get('estimated_sessions',0):,} |\n"
                 st.markdown(page_table)
             else:
                 st.caption("(データなし)")
 
-            st.markdown("#### 記事ディレクトリ + サイト構成上位10")
+            st.markdown("#### 流入上位ディレクトリ")
             dir_data = ahrefs.get("top_directories", [])
             if dir_data:
                 dir_table = "| ディレクトリ | ページ数 | 月間流入 | シェア |\n|---|---|---|---|\n"
