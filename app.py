@@ -627,8 +627,10 @@ if mode == "サイト分析":
 
     # ─── データ取得 (session_state にあれば使用、無ければ mock) ───
     data = st.session_state.get("analysis_data")
-    if data is None or not isinstance(data, dict) or "summary" not in data:
+    is_example_data = data is None or not isinstance(data, dict) or "summary" not in data
+    if is_example_data:
         data = _build_mock_structured(url)
+        st.info("【例】これはサンプル表示です。実際の分析結果を表示するには、左の「分析を実行」ボタンを押してください。")
 
     # summary が dict でない場合の防御 (LLMが文字列で返すケース)
     raw_summary = data.get("summary", {})
@@ -916,6 +918,7 @@ elif mode == "施策レビュー":
         "既にお持ちの SEO 施策案を貼り付けてください。Google特許・公式情報・QRG・リーク資料・DOJ訴訟資料・VRP に照らして1つずつ評価し、機能する根拠 / 機能しない根拠 / より良い代替案を提示します。"
     )
     st.divider()
+    st.info("【例】以下はサンプル会話です。実際にレビューするには、左の入力欄に施策案を貼り付けて「評価する」ボタンを押してください。")
 
     # サンプル会話 (mock)
     st.markdown(
@@ -981,6 +984,7 @@ else:
         "SEO に関する単発の質問にエビデンス付きで回答します。Google公式が答えていない領域は推測ラベルを付けて明示し、根拠が弱い場合は「分からない」と言います。"
     )
     st.divider()
+    st.info("【例】以下はサンプル会話です。実際に質問するには、左の入力欄に質問を入力して「質問する」ボタンを押してください。")
 
     st.markdown(
         """
