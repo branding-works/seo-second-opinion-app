@@ -14,11 +14,11 @@ services:
       - key: ANTHROPIC_API_KEY
         sync: false  # Render ダッシュボードで個別に設定 (機密のため)
       - key: ANTHROPIC_MODEL
-        value: claude-opus-4-7
+        sync: false  # ダッシュボードで管理 (Blueprint再評価時に上書きされないようにするため)
       - key: AHREFS_API_TOKEN
         sync: false
       - key: APP_MODE
-        value: mock  # 初期は mock。実APIを使う際は live に変更
+        sync: false  # ダッシュボードで管理 (live/mock 切替を YAML 上書きから保護)
       # ─── 管理者専用ログ閲覧機能 ───
       - key: ADMIN_PASSWORD
         sync: false  # Render ダッシュボードで個別設定 (機密)
