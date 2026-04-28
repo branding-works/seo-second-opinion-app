@@ -122,19 +122,41 @@ def _safe_get(d: Optional[dict], *keys: str, default: Any = None) -> Any:
     return cur
 
 
+def resolve_target_and_mode(url: str, ui_mode: str) -> tuple[str, str]:
+    """UI上の一致モードを Ahrefs API の (target, mode) に変換する。
+
+    ui_mode:
+      - 完全一致 → exact (target = フルURL)
+      - 部分一致 → prefix (target = フルURL)
+      - ドメイン一致 → domain (target = ドメイン)
+      - サブドメイン含む → subdomains (target = ドメイン)
+    """
+    if ui_mode == "完全一致":
+        return (url.rstrip("/"), "exact")
+    if ui_mode == "部分一致":
+        return (url, "prefix")
+    if ui_mode == "サブドメイン含む":
+        return (_normalize_domain(url), "subdomains")
+    # ドメイン一致 (デフォルト)
+    return (_normalize_domain(url), "domain")
+
+
 # ─── 公開関数 ──────────────────────────────────────────
 
-def get_site_metrics(domain: str) -> dict:
-    """サイト指標 (DR / 被リンク / 月間セッション)。"""
+def get_site_metrics(target: str, mode: str = "domain") -> dict:
+    """サイト指標 (DR / 被リンク / 月間セッション)。
+
+    target: フルURL or ドメイン (mode に応じる)
+    mode: domain / exact / prefix / subdomains
+    """
     reset_api_errors()  # 新しい分析開始でクリア
     if not has_ahrefs_token():
-        result = _mock_metrics(domain)
+        result = _mock_metrics(target)
         result["api_status"] = "AHREFS_API_TOKEN 未設定 (Render環境変数を確認)"
         return result
 
-    target = _normalize_domain(domain)
     today_iso = datetime.utcnow().strftime("%Y-%m-%d")
-    common = {"target": target, "mode": "domain", "protocol": "both"}
+    common = {"target": target, "mode": mode, "protocol": "both"}
 
     # Domain Rating (date は YYYY-MM-DD 必須)
     dr_resp = _api_get(
@@ -208,12 +230,11 @@ def get_site_metrics(domain: str) -> dict:
     }
 
 
-def get_top_keywords(domain: str, limit: int = 10) -> list[dict]:
-    """流入貢献KW 上位N件。"""
+def get_top_keywords(target: str, mode: str = "domain", limit: int = 10) -> list[dict]:
+    """流入貢献KW 上位N件。target/mode は Ahrefs API パラメータ。"""
     if not has_ahrefs_token():
         return _mock_top_keywords()
 
-    target = _normalize_domain(domain)
     today_iso = datetime.utcnow().strftime("%Y-%m-%d")
     # 複数フィールド名を順次試す (Ahrefs API v3 の正しい組み合わせを探す)
     field_attempts = [
@@ -226,7 +247,7 @@ def get_top_keywords(domain: str, limit: int = 10) -> list[dict]:
     for select, order_by in field_attempts:
         params = {
             "target": target,
-            "mode": "domain",
+            "mode": mode,
             "country": DEFAULT_COUNTRY,
             "limit": limit,
             "date": today_iso,
@@ -271,18 +292,17 @@ def get_top_keywords(domain: str, limit: int = 10) -> list[dict]:
     return result
 
 
-def get_top_pages(domain: str, limit: int = 10) -> list[dict]:
-    """流入URL 上位N件。"""
+def get_top_pages(target: str, mode: str = "domain", limit: int = 10) -> list[dict]:
+    """流入URL 上位N件。target/mode は Ahrefs API パラメータ。"""
     if not has_ahrefs_token():
         return _mock_top_pages()
 
-    target = _normalize_domain(domain)
     today_iso = datetime.utcnow().strftime("%Y-%m-%d")
     resp = _api_get(
         "site-explorer/top-pages",
         {
             "target": target,
-            "mode": "domain",
+            "mode": mode,
             "country": DEFAULT_COUNTRY,
             "limit": limit,
             "date": today_iso,
@@ -310,22 +330,22 @@ def get_top_pages(domain: str, limit: int = 10) -> list[dict]:
     return result
 
 
-def get_top_directories(domain: str, limit: int = 10) -> list[dict]:
+def get_top_directories(target: str, mode: str = "domain", limit: int = 10) -> list[dict]:
     """サイト構成 上位ディレクトリ。
 
     top-pages の結果からディレクトリ単位に集計する (大量ページ取得→集計)。
+    target/mode は Ahrefs API パラメータ。
     """
     if not has_ahrefs_token():
         return _mock_top_directories()
 
-    target = _normalize_domain(domain)
     today_iso = datetime.utcnow().strftime("%Y-%m-%d")
     # 大量取得してディレクトリ単位に集計
     resp = _api_get(
         "site-explorer/top-pages",
         {
             "target": target,
-            "mode": "domain",
+            "mode": mode,
             "country": DEFAULT_COUNTRY,
             "limit": 500,  # ディレクトリ集計のため広めに取得
             "date": today_iso,

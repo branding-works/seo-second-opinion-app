@@ -20,6 +20,7 @@ from ahrefs_client import (
     get_top_pages,
     get_top_directories,
     get_last_raw_responses,
+    resolve_target_and_mode,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,13 +44,14 @@ def is_mock_mode() -> bool:
     return os.getenv("APP_MODE", "mock").lower() == "mock"
 
 
-def _gather_ahrefs_data(url: str) -> dict:
-    """Ahrefs クライアントから対象ドメインの全データを集める。"""
+def _gather_ahrefs_data(url: str, url_match_mode: str = "ドメイン一致") -> dict:
+    """Ahrefs クライアントから対象データを集める。url_match_mode で取得範囲を制御。"""
     domain = urlparse(url).netloc or url
-    metrics = get_site_metrics(domain)  # ここで raw_responses がクリア&再収集される
-    top_kw = get_top_keywords(domain)
-    top_pg = get_top_pages(domain)
-    top_dir = get_top_directories(domain)
+    target, mode = resolve_target_and_mode(url, url_match_mode)
+    metrics = get_site_metrics(target, mode)  # ここで raw_responses がクリア&再収集される
+    top_kw = get_top_keywords(target, mode)
+    top_pg = get_top_pages(target, mode)
+    top_dir = get_top_directories(target, mode)
 
     # 流入URL に最有力KWを紐付け (organic-keywords の best_position_url で照合)
     url_to_kw: dict[str, dict] = {}
@@ -385,7 +387,7 @@ def analyze_site_structured(
         return _build_mock_structured(url)
 
     client = get_client()
-    ahrefs_data = _gather_ahrefs_data(url)
+    ahrefs_data = _gather_ahrefs_data(url, url_match_mode)
     page_meta = _fetch_page_meta(url)
 
     if client is None:
@@ -537,7 +539,7 @@ def analyze_site(
 
     # Ahrefs データを自動取得 (mockモード時はダミーデータ、トークン設定時は実データ)
     if ahrefs_data is None:
-        ahrefs_data = _gather_ahrefs_data(url)
+        ahrefs_data = _gather_ahrefs_data(url, url_match_mode)
 
     user_message = f"""モード: A (サイト分析)
 対象URL: {url}
