@@ -158,10 +158,16 @@ def get_site_metrics(target: str, mode: str = "domain") -> dict:
     today_iso = datetime.utcnow().strftime("%Y-%m-%d")
     common = {"target": target, "mode": mode, "protocol": "both"}
 
+    # ─── DR と 被リンク統計はドメイン単位の指標 ───
+    # ユーザーが「完全一致 (exact)」を選んでも、DR/被リンクは本質的にドメインレベルで集計されるため
+    # 常に domain モード + ドメイン名で取得し直す (これをしないと exact 一致のURLにだけ向く RD が0で出る)
+    domain_target = _normalize_domain(target)
+    domain_common = {"target": domain_target, "mode": "domain", "protocol": "both"}
+
     # Domain Rating (date は YYYY-MM-DD 必須)
     dr_resp = _api_get(
         "site-explorer/domain-rating",
-        {**common, "date": today_iso},
+        {**domain_common, "date": today_iso},
     )
     _record_raw("domain-rating", dr_resp)
     dr = (
@@ -169,7 +175,7 @@ def get_site_metrics(target: str, mode: str = "domain") -> dict:
         or _safe_get(dr_resp, "domain_rating", default=None)
     )
 
-    # Traffic / Organic metrics (date 必須)
+    # Traffic / Organic metrics (date 必須) — ユーザー選択モードを尊重
     metrics_resp = _api_get(
         "site-explorer/metrics",
         {
@@ -191,8 +197,8 @@ def get_site_metrics(target: str, mode: str = "domain") -> dict:
         or _safe_get(metrics_resp, "pages", default=None)
     )
 
-    # Backlinks/Referring Domains 集計 (フィールド名は live_refdomains が正)
-    rd_resp = _api_get("site-explorer/backlinks-stats", {**common, "date": today_iso})
+    # Backlinks/Referring Domains 集計 — 必ずドメイン単位 (mode=domain)
+    rd_resp = _api_get("site-explorer/backlinks-stats", {**domain_common, "date": today_iso})
     _record_raw("backlinks-stats", rd_resp)
     rd_total = (
         _safe_get(rd_resp, "metrics", "live_refdomains", default=None)
