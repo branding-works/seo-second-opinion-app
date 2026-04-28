@@ -23,8 +23,21 @@ from seo_analyzer import (
     _build_mock_structured,
 )
 
+import database as db
+from admin_ui import (
+    render_admin_login_sidebar,
+    render_admin_dashboard,
+)
+
 # .env 読み込み
 load_dotenv()
+
+# DB 初期化 (テーブル作成は冪等)
+try:
+    db.init_db()
+except Exception as _db_err:
+    # DB が無くてもアプリ自体は動かす
+    pass
 
 
 # ─── ページ設定 ────────────────────────────────────────
@@ -397,6 +410,15 @@ with st.sidebar:
     }[mode]
     run_btn = st.button(button_label, type="primary", use_container_width=True)
 
+    # ─── 管理者ログイン (URL ?admin=secretkey-bw でのみ表示) ───
+    render_admin_login_sidebar()
+
+
+# ─── 管理者ダッシュボードを表示中ならここで短絡 ─────────
+if st.session_state.get("is_admin") and st.session_state.get("show_admin_dashboard"):
+    render_admin_dashboard()
+    st.stop()
+
 
 # ─── メイン領域: モード別コンテンツ ─────────────────────
 
@@ -608,6 +630,25 @@ if mode == "サイト分析":
             }
 
         st.session_state.analysis_data = new_data
+
+        # ─── 分析ログをDBに保存 ───
+        try:
+            axis_scores = {}
+            total_score = None
+            if isinstance(new_data.get("axes"), list):
+                axis_scores = {a.get("name", "?"): a.get("score", 0) for a in new_data["axes"]}
+                total_score = sum(int(v) for v in axis_scores.values() if isinstance(v, (int, float)))
+            db.save_analysis(
+                mode="サイト分析",
+                target_url=url,
+                url_match_mode=url_match,
+                query_text=None,
+                total_score=total_score,
+                axis_scores=axis_scores,
+                full_result=new_data,
+            )
+        except Exception:
+            pass
 
         if new_data.get("error"):
             status_box.error(
@@ -963,6 +1004,18 @@ elif mode == "施策レビュー":
                     st.write("✏️  結果を整形中...")
                     time.sleep(0.2)
                     status.update(label="✓ 評価完了", state="complete", expanded=False)
+            try:
+                db.save_analysis(
+                    mode="施策レビュー",
+                    target_url=related or None,
+                    url_match_mode=None,
+                    query_text=review_input,
+                    total_score=None,
+                    axis_scores=None,
+                    full_result={"answer_markdown": result, "input": review_input, "related_url": related},
+                )
+            except Exception:
+                pass
             st.markdown(
                 f"""
 <div class="chat-msg">
@@ -1021,6 +1074,18 @@ else:
                     st.write("✏️  結果を整形中...")
                     time.sleep(0.2)
                     status.update(label="✓ 回答完了", state="complete", expanded=False)
+            try:
+                db.save_analysis(
+                    mode="個別質問",
+                    target_url=None,
+                    url_match_mode=None,
+                    query_text=q_input,
+                    total_score=None,
+                    axis_scores=None,
+                    full_result={"answer_markdown": result, "question": q_input},
+                )
+            except Exception:
+                pass
             st.markdown(
                 f"""
 <div class="chat-msg">

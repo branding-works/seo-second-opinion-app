@@ -19,3 +19,10 @@ services:
         sync: false
       - key: APP_MODE
         value: mock  # 初期は mock。実APIを使う際は live に変更
+      # ─── 管理者専用ログ閲覧機能 ───
+      - key: ADMIN_PASSWORD
+        sync: false  # Render ダッシュボードで個別設定 (機密)
+      - key: ADMIN_URL_KEY
+        value: secretkey-bw  # URL ?admin=<この値> でログイン画面が出現
+      - key: DATABASE_URL
+        sync: false  # Neon Postgres の接続URL (psql://...) を Render ダッシュボードで設定

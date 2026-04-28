@@ -116,6 +116,50 @@ seo-second-opinion-app/
 ### Ahrefs 実 API 接続
 `ahrefs_client.py` の TODO コメント箇所を実装。Ahrefs API token 必要 (https://ahrefs.com/api)。
 
+## 管理者専用ログ閲覧機能
+
+フリーツールとして公開しても、第三者にはログが見えず**管理者だけ**が全利用ログを閲覧できる仕組み。
+
+### しくみ
+1. 一般ユーザーは普通のURLでアクセス → 通常UIのみ、管理者要素は完全非表示
+2. 管理者は `https://<your-app>/?admin=secretkey-bw` でアクセス → サイドバーに「🔐 管理者ログイン」expander が出現
+3. `ADMIN_PASSWORD` 環境変数と一致するパスワードを入力 → 「📊 管理者ダッシュボード」ボタンが出現
+4. ダッシュボードで全分析ログ閲覧、CSV/JSON エクスポート可能
+
+### セットアップ (Render)
+
+#### 1. Neon (無料 Postgres) を準備
+1. https://neon.tech に GitHubアカウントでログイン (無料3GB)
+2. New Project → Region は Japan に近い場所 (Singapore等)
+3. 接続URLをコピー: `postgresql://user:pass@ep-xxx.aws.neon.tech/neondb?sslmode=require`
+
+#### 2. Render 側で環境変数を設定
+Render ダッシュボード → Environment:
+- `ADMIN_PASSWORD` = (任意の長めのパスワード、例 `bw-seo-admin-2026-xyz`)
+- `ADMIN_URL_KEY` = `secretkey-bw` (URLの目印。変えてもよい)
+- `DATABASE_URL` = (Neonでコピーしたpostgresql://...)
+
+設定後、自動再デプロイが走り、起動時にテーブル `analyses` が自動作成される。
+
+#### 3. アクセス確認
+- 一般 URL: `https://<your-app>.onrender.com` → 普段通り
+- 管理者 URL: `https://<your-app>.onrender.com/?admin=secretkey-bw` → ログイン欄が出現
+- パスワード入力後、サイドバー「📊 管理者ダッシュボード」をクリック
+
+### 管理者ダッシュボード機能
+- 過去30日の利用サマリ (総分析数 / ユニークURL / 平均スコア / 人気モード)
+- 期間フィルタ (7日/30日/90日/365日)、モードフィルタ、URL/クエリ検索
+- 各ログの「詳細を見る」で完全なJSONレポート閲覧
+- CSV / JSON 一括エクスポート
+- ログアウトボタン
+
+### ローカル実行 (DB なしでも動く)
+`DATABASE_URL` 未設定なら SQLite (`/tmp/seo_logs.db`) に保存。Render Free プランで再デプロイすると消えるため本番はNeon必須。
+
+### プライバシーに関する注意
+- ユーザーの IPアドレスや生メールは保存していない (`user_hash` 列はSHA-256ハッシュのみ)
+- 入力したURL・施策・質問内容はログに残るため、管理者が閲覧することを利用規約に明記推奨
+
 ## トラブルシューティング
 
 ### `streamlit: command not found`
