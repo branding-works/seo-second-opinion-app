@@ -564,6 +564,136 @@ def get_top_directories(target: str, mode: str = "domain", limit: int = 10) -> l
     return result[:limit]
 
 
+# ─── Brand Radar (AI 引用) ────────────────────────────
+
+# Ahrefs Brand Radar が対応する 7 chatbot platforms。
+# google_ai_overviews と google_ai_mode は同じリクエストに混在不可、
+# 非 Google モデルとも混在不可なので 1 platform につき 1 call。
+_BRAND_RADAR_PLATFORMS: list[tuple[str, str]] = [
+    ("google_ai_overviews", "AI Overviews"),
+    ("google_ai_mode", "AI Mode"),
+    ("chatgpt", "ChatGPT"),
+    ("gemini", "Gemini"),
+    ("perplexity", "Perplexity"),
+    ("copilot", "Copilot"),
+    ("grok", "Grok"),
+]
+
+
+def _build_brand_radar_where(target: str, mode: str) -> tuple[dict, str]:
+    """Brand Radar `where` 句を URL一致モードに合わせて生成。
+
+    Returns: (where_dict, expected_url_prefix)
+    expected_url_prefix は API レスポンスを Python 側で再フィルタするために使う
+    (Ahrefs API は同一応答内の他ドメイン引用も返すため)。
+    """
+    domain = _normalize_domain(target)
+    if mode == "exact":
+        # 完全一致: 特定 URL のみ
+        url_no_proto = target
+        for prefix in ("https://", "http://"):
+            if url_no_proto.startswith(prefix):
+                url_no_proto = url_no_proto[len(prefix):]
+        where = {"field": "cited_url_exact", "is": ["eq", url_no_proto]}
+        return where, url_no_proto
+    if mode == "prefix":
+        url_no_proto = target
+        for prefix in ("https://", "http://"):
+            if url_no_proto.startswith(prefix):
+                url_no_proto = url_no_proto[len(prefix):]
+        where = {"field": "cited_url_prefix", "is": ["eq", url_no_proto]}
+        return where, url_no_proto
+    if mode == "subdomains":
+        where = {"field": "cited_domain_subdomains", "is": ["eq", domain]}
+        return where, domain
+    # domain (default)
+    where = {"field": "cited_domain", "is": ["eq", domain]}
+    return where, domain
+
+
+def _fetch_brand_radar_one_platform(
+    data_source: str, where_filter: dict, expected_prefix: str, country: str = "JP"
+) -> Optional[int]:
+    """1 platform 分の brand-radar-cited-pages を取得し、自社配下ページの
+    responses 合計を返す。API 失敗時 None。"""
+    resp = _api_get(
+        "brand-radar/cited-pages",
+        {
+            "data_source": data_source,
+            "country": country,
+            "select": "url,responses",
+            "where": json.dumps(where_filter),
+            "limit": 1000,
+        },
+        timeout=60,
+    )
+    if not resp:
+        return None
+    pages = _safe_get(resp, "pages", default=None) or []
+    if not isinstance(pages, list):
+        return 0
+    # API は同一応答内の他ドメイン引用も含めて返すため、自社配下のみ Python 側で再フィルタ
+    total = 0
+    for p in pages:
+        if not isinstance(p, dict):
+            continue
+        url = (p.get("url") or "").lstrip("/")
+        # http(s) は API レスポンスに含まれない (n-works.link/blog/...形式)
+        if url.startswith(expected_prefix.rstrip("/")):
+            r = p.get("responses", 0)
+            if isinstance(r, (int, float)):
+                total += int(r)
+    return total
+
+
+def get_brand_radar_citations(target: str, mode: str = "domain", country: str = "JP") -> dict:
+    """7 platforms の AI 引用回数を並列取得。
+
+    Returns: {
+        "platforms": {
+            "google_ai_overviews": {"label": "AI Overviews", "responses": 758, "status": "ok"},
+            ...
+        },
+        "total": 3700,                 # 全 platform の合計
+        "fetched_at": "Ahrefs Brand Radar (live)",
+        "country": "JP",
+    }
+    エラーの platform は status="error" になり responses は 0。
+    """
+    if not has_ahrefs_token():
+        return _mock_brand_radar()
+
+    where_filter, expected_prefix = _build_brand_radar_where(target, mode)
+    platforms_result: dict = {}
+    total = 0
+
+    with ThreadPoolExecutor(max_workers=7) as executor:
+        futures = {
+            executor.submit(
+                _fetch_brand_radar_one_platform, ds, where_filter, expected_prefix, country
+            ): (ds, label)
+            for ds, label in _BRAND_RADAR_PLATFORMS
+        }
+        for future, (ds, label) in futures.items():
+            try:
+                count = future.result(timeout=180)
+            except Exception as e:
+                logger.warning(f"Brand Radar {ds}: {e}")
+                count = None
+            if count is None:
+                platforms_result[ds] = {"label": label, "responses": 0, "status": "error"}
+            else:
+                platforms_result[ds] = {"label": label, "responses": count, "status": "ok"}
+                total += count
+
+    return {
+        "platforms": platforms_result,
+        "total": total,
+        "fetched_at": "Ahrefs Brand Radar (live)",
+        "country": country,
+    }
+
+
 # ─── Mock データ (token 未設定時) ──────────────────────
 
 def _mock_metrics(domain: str) -> dict:
@@ -621,3 +751,24 @@ def _mock_top_directories() -> list[dict]:
         {"directory": "/partner/", "pages": 8, "monthly_sessions": 45, "share_pct": 0.4},
         {"directory": "/sitemap/", "pages": 1, "monthly_sessions": 35, "share_pct": 0.3},
     ]
+
+
+def _mock_brand_radar() -> dict:
+    """token 未設定 / mock モード時のダミー Brand Radar データ。"""
+    sample = {
+        "google_ai_overviews": ("AI Overviews", 758),
+        "google_ai_mode": ("AI Mode", 2600),
+        "chatgpt": ("ChatGPT", 24),
+        "gemini": ("Gemini", 0),
+        "perplexity": ("Perplexity", 87),
+        "copilot": ("Copilot", 6),
+        "grok": ("Grok", 148),
+    }
+    platforms = {ds: {"label": label, "responses": n, "status": "ok"} for ds, (label, n) in sample.items()}
+    total = sum(p["responses"] for p in platforms.values())
+    return {
+        "platforms": platforms,
+        "total": total,
+        "fetched_at": "mock",
+        "country": "JP",
+    }

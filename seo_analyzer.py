@@ -20,6 +20,7 @@ from ahrefs_client import (
     get_top_keywords,
     get_top_pages,
     get_top_directories,
+    get_brand_radar_citations,
     get_last_raw_responses,
     resolve_target_and_mode,
     reset_api_errors,
@@ -49,8 +50,9 @@ def is_mock_mode() -> bool:
 def _gather_ahrefs_data(url: str, url_match_mode: str = "ドメイン一致") -> dict:
     """Ahrefs クライアントから対象データを集める。url_match_mode で取得範囲を制御。
 
-    4つの取得関数を並列実行。`get_site_metrics` 内部の 4 API も並列なので、
-    最終的に 7 本の HTTP リクエストが並列で走る (合計時間 = 一番遅い1本)。
+    Site Explorer 系 4 関数 + Brand Radar 1 関数 (内部で 7 platforms 並列) を
+    全て並列実行。最終的に Site Explorer 7本 + Brand Radar 7本 = 計14本の
+    HTTP リクエストが並列で走る (合計時間 = 一番遅い1本)。
     """
     domain = urlparse(url).netloc or url
     target, mode = resolve_target_and_mode(url, url_match_mode)
@@ -58,16 +60,18 @@ def _gather_ahrefs_data(url: str, url_match_mode: str = "ドメイン一致") ->
     # raw_responses / api_errors は分析開始時に1回だけクリア (各関数内では reset しない前提)
     reset_api_errors()
 
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    with ThreadPoolExecutor(max_workers=5) as executor:
         f_metrics = executor.submit(get_site_metrics, target, mode)
         f_top_kw = executor.submit(get_top_keywords, target, mode)
         f_top_pg = executor.submit(get_top_pages, target, mode)
         f_top_dir = executor.submit(get_top_directories, target, mode)
+        f_brand_radar = executor.submit(get_brand_radar_citations, target, mode)
 
         metrics = f_metrics.result()
         top_kw = f_top_kw.result()
         top_pg = f_top_pg.result()
         top_dir = f_top_dir.result()
+        brand_radar = f_brand_radar.result()
 
     # 流入URL に最有力KWを紐付け (organic-keywords の best_position_url で照合)
     url_to_kw: dict[str, dict] = {}
@@ -115,6 +119,7 @@ def _gather_ahrefs_data(url: str, url_match_mode: str = "ドメイン一致") ->
         "top_keywords": top_kw,
         "top_pages": top_pg,
         "top_directories": top_dir,
+        "brand_radar": brand_radar,
         "domain": domain,
     }
 
@@ -480,6 +485,7 @@ def _build_empty_structured(url: str, ahrefs_data: dict, page_meta: dict, error:
         "top_keywords": [],
         "top_pages": [],
         "top_directories": [],
+        "brand_radar": {"platforms": {}, "total": 0, "fetched_at": "", "country": ""},
         "domain": ahrefs_data.get("domain", "") if isinstance(ahrefs_data, dict) else "",
     }
     return {
