@@ -6,8 +6,8 @@ services:
     name: seo-second-opinion
     runtime: python
     plan: starter  # 商用利用 ($7/月)。sleep なし & 永続ビルドキャッシュ
-    # uv (Rust製の高速 pip 代替) を使ってパッケージインストールを ~3倍高速化
-    buildCommand: pip install uv && uv pip install --system -r requirements.txt
+    # uv (Rust製の高速 pip 代替) を python -m 経由で呼び出し PATH 依存を回避
+    buildCommand: pip install uv && python -m uv pip install --system -r requirements.txt
     startCommand: streamlit run app.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true --browser.gatherUsageStats=false
     envVars:
       - key: PYTHON_VERSION
