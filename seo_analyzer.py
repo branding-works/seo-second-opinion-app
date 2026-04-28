@@ -506,13 +506,16 @@ def _call_axis(
     url: str,
     axis_key: str,
     axis_name: str,
+    axis_total: int,
     page_meta: dict,
     ahrefs_data: Optional[dict],
 ) -> dict:
     """1軸だけ評価する LLM call。{issues: [...], passed: [...]} を返す。
 
     ahrefs_data が None の場合は Ahrefs を使わない軸 (内部SEO / AI露出) として
-    扱い、Ahrefs 取得を待たずに先行起動するために使う。"""
+    扱い、Ahrefs 取得を待たずに先行起動するために使う。
+    axis_total はこの軸のチェック項目総数 (例: 内部SEO=17)。passed は
+    `axis_total - issues件数` を埋め切る指示に使う。"""
     tool = _make_axis_tool(axis_key, axis_name)
     ahrefs_block = (
         f"\n\nAhrefs データ (Site Explorer):\n{json.dumps(ahrefs_data, ensure_ascii=False, indent=2)}"
@@ -521,13 +524,16 @@ def _call_axis(
     )
     user_message = f"""モード: A (軸別分析: {axis_name})
 対象URL: {url}
+この軸の総チェック項目数: {axis_total}
 
 ページメタ情報 (HTML から自動抽出):
 {json.dumps(page_meta, ensure_ascii=False, indent=2)}{ahrefs_block}
 
 要求:
 - **{axis_name} 軸のみ**を評価する。他の軸の指摘は出さない。
-- issues (指摘事項) と passed (通過項目) のみを返す。サマリー / contradictions / donts / sources はこの call では返さない (別 call で扱う)。
+- issues (指摘事項) と passed (通過項目) を返す。サマリー / contradictions / donts / sources はこの call では返さない (別 call で扱う)。
+- **passed (通過項目) は必ず埋める**。「課題なし = passed 空配列」ではない。`passed の件数 ≒ {axis_total} − issues の件数` になるよう、合格と判定したチェック項目を可能な限り列挙する。
+- 各 passed 項目は `name` (チェックした観点・項目名、例: "canonical タグの自己参照", "OGP og:image 設定") と `url` (実際にチェックした対象ドメイン配下の URL) の dict で返す。url は省略せず、対象 URL のドメイン配下の実在 URL を入れる。
 - evidence は最低1件、url 必須。ラベルは「公式」「QRG」「リーク」「訴訟」「VRP」「特許」「二次解説」「Googler発言」のいずれか
 - check_url は対象ドメイン配下の実在 URL (与えられた URL のドメインを使う)
 - 推測の評価は priority "低" とし、observation_sub に「推測扱い」と書く
@@ -538,7 +544,7 @@ def _call_axis(
     try:
         response = client.messages.create(
             model=get_model(),
-            max_tokens=4000,  # 1軸分なら 4000 で十分
+            max_tokens=5000,  # passed を最大 21項目 (content_seo) 埋める余裕を確保
             system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
             tools=[tool],
             tool_choice={"type": "tool", "name": tool["name"]},
@@ -645,7 +651,7 @@ def analyze_site_structured(
     for meta in _AXIS_META:
         if not meta["needs_ahrefs"]:
             axis_futures[meta["key"]] = llm_pool.submit(
-                _call_axis, client, url, meta["key"], meta["name"], page_meta, None
+                _call_axis, client, url, meta["key"], meta["name"], meta["total"], page_meta, None
             )
 
     # Step 3: Ahrefs 完了を待ち、残りの軸 + サマリーを起動
@@ -655,7 +661,7 @@ def analyze_site_structured(
     for meta in _AXIS_META:
         if meta["needs_ahrefs"]:
             axis_futures[meta["key"]] = llm_pool.submit(
-                _call_axis, client, url, meta["key"], meta["name"], page_meta, ahrefs_data
+                _call_axis, client, url, meta["key"], meta["name"], meta["total"], page_meta, ahrefs_data
             )
     f_summary = llm_pool.submit(_call_summary, client, url, page_meta, ahrefs_data)
 
