@@ -350,6 +350,113 @@ ANALYSIS_TOOL = {
 }
 
 
+# ─── 並列分割版 (Mode A 高速化) で使う tool 定義 ────────────────────────
+# analyze_site_structured を 6 並列 (5軸 + サマリー) に分割実行するための
+# 軽量 tool spec。各 call の出力トークンが小さくなるため Sonnet 4.6 で
+# 60-90秒に収まる。
+
+def _make_axis_tool(axis_key: str, axis_name: str) -> dict:
+    """1軸分の評価提出 tool。"""
+    return {
+        "name": f"submit_axis_{axis_key}",
+        "description": (
+            f"{axis_name} 軸の SEO 評価を提出する。"
+            "issues (指摘事項) と passed (通過項目) を構造化して返す。"
+        ),
+        "input_schema": _AXIS_SCHEMA,
+    }
+
+
+SUMMARY_TOOL = {
+    "name": "submit_summary",
+    "description": (
+        "全体サマリー (強み / 懸念 / 施策案) と 5軸スコア配列、"
+        "contradictions (公式 vs 実態) / donts (やってはいけない施策) / "
+        "sources (出典リスト) を提出する。各軸の issues/passed は別 call で集計済み。"
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "summary": {
+                "type": "object",
+                "properties": {
+                    "total_score": {"type": "integer", "minimum": 0, "maximum": 100},
+                    "axes": {
+                        "type": "array",
+                        "minItems": 5,
+                        "maxItems": 5,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "key": {"type": "string", "enum": ["internal_seo", "external_seo", "content_seo", "eeat", "ai_exposure"]},
+                                "name": {"type": "string"},
+                                "score": {"type": "integer", "minimum": 0, "maximum": 20},
+                                "issues": {"type": "integer", "minimum": 0},
+                                "total": {"type": "integer"},
+                            },
+                            "required": ["key", "name", "score", "issues", "total"],
+                        },
+                    },
+                    "strengths": {"type": "string"},
+                    "concerns": {"type": "string"},
+                    "priority_action": {"type": "string"},
+                },
+                "required": ["total_score", "axes", "strengths", "concerns", "priority_action"],
+            },
+            "contradictions": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "public": {"type": "string"},
+                        "internal": {"type": "string"},
+                        "source_label": {"type": "string"},
+                        "source_url": {"type": "string"},
+                    },
+                    "required": ["public", "internal", "source_label", "source_url"],
+                },
+            },
+            "donts": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "reason": {"type": "string"},
+                        "evidence_label": {"type": "string"},
+                        "evidence_url": {"type": "string"},
+                    },
+                    "required": ["name", "reason", "evidence_label", "evidence_url"],
+                },
+            },
+            "sources": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "text": {"type": "string"},
+                        "url": {"type": "string"},
+                        "label": {"type": "string"},
+                    },
+                    "required": ["text", "url", "label"],
+                },
+            },
+        },
+        "required": ["summary", "contradictions", "donts", "sources"],
+    },
+}
+
+
+# 5軸の (key, 表示名, total) — サマリースコア計算とエラー時のフォールバックで共有
+_AXIS_META = [
+    {"key": "internal_seo", "name": "内部SEO・テクニカル", "total": 17, "needs_ahrefs": False},
+    {"key": "external_seo", "name": "外部SEO・サイテーション", "total": 7, "needs_ahrefs": True},
+    {"key": "content_seo", "name": "コンテンツSEO・記事", "total": 21, "needs_ahrefs": True},
+    {"key": "eeat", "name": "EEAT・広報", "total": 14, "needs_ahrefs": True},
+    {"key": "ai_exposure", "name": "AI露出 (LLMO・AI引用)", "total": 8, "needs_ahrefs": False},
+]
+
+
 def _build_empty_structured(url: str, ahrefs_data: dict, page_meta: dict, error: str = "") -> dict:
     """LLM 失敗時に返す空のスケルトン (スコア 0、空配列)。
 
@@ -394,24 +501,71 @@ def _build_empty_structured(url: str, ahrefs_data: dict, page_meta: dict, error:
     }
 
 
-def analyze_site_structured(
+def _call_axis(
+    client: Anthropic,
     url: str,
-    url_match_mode: str = "完全一致",
+    axis_key: str,
+    axis_name: str,
+    page_meta: dict,
+    ahrefs_data: Optional[dict],
 ) -> dict:
-    """Mode A の構造化版。Anthropic Tool Use で JSON を保証。"""
-    if is_mock_mode():
-        return _build_mock_structured(url)
+    """1軸だけ評価する LLM call。{issues: [...], passed: [...]} を返す。
 
-    client = get_client()
-    ahrefs_data = _gather_ahrefs_data(url, url_match_mode)
-    page_meta = _fetch_page_meta(url)
-
-    if client is None:
-        return _build_empty_structured(url, ahrefs_data, page_meta, error="ANTHROPIC_API_KEY 未設定")
-
-    user_message = f"""モード: A (サイト分析・構造化出力モード)
+    ahrefs_data が None の場合は Ahrefs を使わない軸 (内部SEO / AI露出) として
+    扱い、Ahrefs 取得を待たずに先行起動するために使う。"""
+    tool = _make_axis_tool(axis_key, axis_name)
+    ahrefs_block = (
+        f"\n\nAhrefs データ (Site Explorer):\n{json.dumps(ahrefs_data, ensure_ascii=False, indent=2)}"
+        if ahrefs_data is not None
+        else "\n\n(この軸では Ahrefs データを参照しません。HTML / メタ情報のみで判定してください)"
+    )
+    user_message = f"""モード: A (軸別分析: {axis_name})
 対象URL: {url}
-URL一致モード: {url_match_mode}
+
+ページメタ情報 (HTML から自動抽出):
+{json.dumps(page_meta, ensure_ascii=False, indent=2)}{ahrefs_block}
+
+要求:
+- **{axis_name} 軸のみ**を評価する。他の軸の指摘は出さない。
+- issues (指摘事項) と passed (通過項目) のみを返す。サマリー / contradictions / donts / sources はこの call では返さない (別 call で扱う)。
+- evidence は最低1件、url 必須。ラベルは「公式」「QRG」「リーク」「訴訟」「VRP」「特許」「二次解説」「Googler発言」のいずれか
+- check_url は対象ドメイン配下の実在 URL (与えられた URL のドメインを使う)
+- 推測の評価は priority "低" とし、observation_sub に「推測扱い」と書く
+- 各 issue は priority を "高" / "中" / "低" のいずれかにする
+
+提出は submit_axis_{axis_key} ツールを使うこと (必須)。"""
+
+    try:
+        response = client.messages.create(
+            model=get_model(),
+            max_tokens=4000,  # 1軸分なら 4000 で十分
+            system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
+            tools=[tool],
+            tool_choice={"type": "tool", "name": tool["name"]},
+            messages=[{"role": "user", "content": user_message}],
+        )
+    except Exception as e:
+        logger.error(f"Axis call failed ({axis_key}): {e}")
+        return {"issues": [], "passed": [], "_error": f"{axis_name}: {str(e)[:200]}"}
+
+    for block in response.content:
+        if getattr(block, "type", None) == "tool_use":
+            input_data = block.input
+            if isinstance(input_data, dict):
+                return input_data
+    logger.warning(f"Axis {axis_key}: tool_use block missing")
+    return {"issues": [], "passed": [], "_error": f"{axis_name}: ツール呼び出しなし"}
+
+
+def _call_summary(
+    client: Anthropic,
+    url: str,
+    page_meta: dict,
+    ahrefs_data: dict,
+) -> dict:
+    """サマリー + contradictions/donts/sources を取得する LLM call。"""
+    user_message = f"""モード: A (サマリー / 公式 vs 実態 / NG施策 / 出典)
+対象URL: {url}
 
 ページメタ情報 (HTML から自動抽出):
 {json.dumps(page_meta, ensure_ascii=False, indent=2)}
@@ -420,118 +574,152 @@ Ahrefs データ (Site Explorer):
 {json.dumps(ahrefs_data, ensure_ascii=False, indent=2)}
 
 要求:
-- **summary は必ず辞書 (オブジェクト) で返す**。文字列ではなく以下5フィールドを持つ object: total_score (整数), axes (配列), strengths (文字列), concerns (文字列), priority_action (文字列)
-- **axes (トップレベル) も辞書**。internal_seo / external_seo / content_seo / eeat / ai_exposure をキーとして、各値は {{issues: [...], passed: [...]}} の object
-- 5軸ごとに issues (指摘事項) と passed (通過項目) を埋める
-- score = ((total - issues件数) / total) * 20 で四捨五入
-- evidence は最低1件、url 必須。ラベルは「公式」「QRG」「リーク」「訴訟」「VRP」「特許」「二次解説」「Googler発言」のいずれか
-- check_url は対象ドメイン配下の実在URL (与えられた URL のドメインを使う)
-- contradictions は対象サイトに関連するもの2-3件
-- donts は対象サイトに該当しそうな都市伝説的施策 3-5件
-- sources は出典リスト 6-10件
-- 推測の評価は priority "低" とし、observation_sub に「推測扱い」と書く
+- summary: 全体の強み (strengths) / 懸念 (concerns) / 優先施策 (priority_action) を 2-3文ずつ。total_score は 0-100 整数、axes は5軸ぶんのスコア配列(各 score は 0-20 整数)。
+- 各軸の score は (total - 想定 issues 件数) / total * 20 で四捨五入したもの。axes 配列の total 値はそれぞれ 17 / 7 / 21 / 14 / 8。
+- contradictions は対象サイトに関連するもの 2-3 件 (Google公式メッセージ vs 内部実装 / リーク / 訴訟資料での実態)
+- donts は対象サイトに該当しそうな都市伝説的施策 3-5 件
+- sources は出典リスト 6-10 件 (公式 / QRG / リーク / 訴訟 / VRP / 特許 / Googler発言)
 
-提出は submit_seo_analysis ツールを使うこと (必須)。文字列ではなく構造化された object で各フィールドを埋める。"""
+提出は submit_summary ツールを使うこと (必須)。"""
 
     try:
         response = client.messages.create(
             model=get_model(),
-            # 出力上限。Mode A の構造化出力は5軸 × issues + passed + contradictions
-            # + sources + donts と項目が多く、Sonnet 4.6 だと 12k では切れる
-            # ケースが確認されたため 16k を維持する。
-            max_tokens=16000,
-            # システムプロンプトを ephemeral キャッシュ (5分TTL)。同セッション内の
-            # 2回目以降の分析呼び出しで読み込み時間とコストが大幅削減される。
+            max_tokens=6000,  # サマリー + メタ系は重め
             system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
-            tools=[ANALYSIS_TOOL],
-            tool_choice={"type": "tool", "name": "submit_seo_analysis"},
+            tools=[SUMMARY_TOOL],
+            tool_choice={"type": "tool", "name": "submit_summary"},
             messages=[{"role": "user", "content": user_message}],
         )
     except Exception as e:
-        logger.error(f"Anthropic API error: {e}")
-        return _build_empty_structured(url, ahrefs_data, page_meta, error=f"Anthropic API エラー: {str(e)[:200]}")
+        logger.error(f"Summary call failed: {e}")
+        return {"summary": {}, "contradictions": [], "donts": [], "sources": [], "_error": f"サマリー: {str(e)[:200]}"}
 
-    # stop_reason を取得 (max_tokens 切れ検出用)
-    stop_reason = getattr(response, "stop_reason", "")
-    logger.info(f"Anthropic response stop_reason={stop_reason}, blocks={[getattr(b, 'type', '?') for b in response.content]}")
-
-    # tool_use ブロックを抽出
-    parsed = None
     for block in response.content:
-        if getattr(block, "type", None) == "tool_use" and getattr(block, "name", None) == "submit_seo_analysis":
-            parsed = block.input
-            break
+        if getattr(block, "type", None) == "tool_use":
+            input_data = block.input
+            if isinstance(input_data, dict):
+                return input_data
+    logger.warning("Summary call: tool_use block missing")
+    return {"summary": {}, "contradictions": [], "donts": [], "sources": [], "_error": "サマリー: ツール呼び出しなし"}
 
-    if parsed is None:
-        logger.warning(f"LLM did not call submit_seo_analysis tool. stop_reason={stop_reason}")
-        return _build_empty_structured(url, ahrefs_data, page_meta, error=f"LLMがツール呼び出しを行わなかった (stop_reason={stop_reason})")
 
-    # スキーマ検証 (必須キー確認)
-    if not isinstance(parsed, dict) or "summary" not in parsed or "axes" not in parsed:
-        keys_str = list(parsed.keys()) if isinstance(parsed, dict) else type(parsed).__name__
-        logger.warning(f"LLM tool input missing required keys: keys={keys_str}, stop_reason={stop_reason}")
-        if stop_reason == "max_tokens":
-            err_msg = f"LLM応答が max_tokens で切れました (含まれるキー: {keys_str})。max_tokens を増やすか、対象URLを単純化してください。"
-        else:
-            err_msg = f"LLM応答に必須フィールド (summary/axes) が含まれていません (stop_reason={stop_reason}, 含まれるキー: {keys_str})"
-        return _build_empty_structured(url, ahrefs_data, page_meta, error=err_msg)
+def _normalize_axis(axis_data) -> dict:
+    """軸 call の戻り値を {issues: [...], passed: [...]} に正規化。"""
+    if not isinstance(axis_data, dict):
+        return {"issues": [], "passed": []}
+    issues = axis_data.get("issues", [])
+    passed = axis_data.get("passed", [])
+    return {
+        "issues": issues if isinstance(issues, list) else [],
+        "passed": passed if isinstance(passed, list) else [],
+    }
 
-    # summary が dict でない場合 (LLM が文字列で返したケース) → 救済して続行
-    if not isinstance(parsed.get("summary"), dict):
-        raw_summary_str = str(parsed.get("summary", "")) if parsed.get("summary") else ""
-        logger.warning(f"LLM returned summary as {type(parsed.get('summary')).__name__}; recovering")
-        parsed["summary"] = {
-            "total_score": 0,
-            "axes": [
-                {"key": "internal_seo", "name": "内部SEO・テクニカル", "score": 0, "issues": 0, "total": 17},
-                {"key": "external_seo", "name": "外部SEO・サイテーション", "score": 0, "issues": 0, "total": 7},
-                {"key": "content_seo", "name": "コンテンツSEO・記事", "score": 0, "issues": 0, "total": 21},
-                {"key": "eeat", "name": "EEAT・広報", "score": 0, "issues": 0, "total": 14},
-                {"key": "ai_exposure", "name": "AI露出 (LLMO・AI引用)", "score": 0, "issues": 0, "total": 8},
-            ],
-            "strengths": raw_summary_str[:500],
-            "concerns": "",
-            "priority_action": "",
-        }
-        parsed.setdefault("_warnings", []).append("summary が文字列で返されたため、自動補正しました")
 
-    # summary.axes が list でなければ補正
-    if not isinstance(parsed["summary"].get("axes"), list):
-        parsed["summary"]["axes"] = [
-            {"key": "internal_seo", "name": "内部SEO・テクニカル", "score": 0, "issues": 0, "total": 17},
-            {"key": "external_seo", "name": "外部SEO・サイテーション", "score": 0, "issues": 0, "total": 7},
-            {"key": "content_seo", "name": "コンテンツSEO・記事", "score": 0, "issues": 0, "total": 21},
-            {"key": "eeat", "name": "EEAT・広報", "score": 0, "issues": 0, "total": 14},
-            {"key": "ai_exposure", "name": "AI露出 (LLMO・AI引用)", "score": 0, "issues": 0, "total": 8},
-        ]
-        parsed.setdefault("_warnings", []).append("summary.axes が list でないため自動補正")
+def analyze_site_structured(
+    url: str,
+    url_match_mode: str = "完全一致",
+) -> dict:
+    """Mode A の構造化版。サマリー + 5軸を 6 並列で実行する。
 
-    # axes (data 直下) が dict でない場合 → 空 dict で補正
-    if not isinstance(parsed.get("axes"), dict):
-        parsed["axes"] = {
-            "internal_seo": {"issues": [], "passed": []},
-            "external_seo": {"issues": [], "passed": []},
-            "content_seo": {"issues": [], "passed": []},
-            "eeat": {"issues": [], "passed": []},
-            "ai_exposure": {"issues": [], "passed": []},
-        }
-        parsed.setdefault("_warnings", []).append("axes が dict でないため空構造に置換")
+    Ahrefs を待たずに「内部SEO」「AI露出」軸を先行起動 (page_meta だけで判定可)。
+    残り 4 call (サマリー / 外部SEO / コンテンツ / EEAT) は Ahrefs 完了後に開始。
+    実時間 ≈ max(各 call の所要時間) ≈ 60-90秒。"""
+    if is_mock_mode():
+        return _build_mock_structured(url)
 
-    # 任意フィールドのデフォルト補完 (空配列で安全に表示できるように)
-    parsed.setdefault("contradictions", [])
-    parsed.setdefault("donts", [])
-    parsed.setdefault("sources", [])
-    if "axes" in parsed and isinstance(parsed["axes"], dict):
-        for k in ["internal_seo", "external_seo", "content_seo", "eeat", "ai_exposure"]:
-            parsed["axes"].setdefault(k, {"issues": [], "passed": []})
-            parsed["axes"][k].setdefault("issues", [])
-            parsed["axes"][k].setdefault("passed", [])
+    client = get_client()
+    if client is None:
+        return _build_empty_structured(url, {}, {}, error="ANTHROPIC_API_KEY 未設定")
 
-    # ahrefs / page_meta / target_url を注入
-    parsed["ahrefs"] = ahrefs_data
-    parsed["url_meta"] = page_meta
-    parsed["target_url"] = url
-    return parsed
+    # Step 1: Ahrefs と page_meta を並列取得
+    fetcher_pool = ThreadPoolExecutor(max_workers=2)
+    f_ahrefs = fetcher_pool.submit(_gather_ahrefs_data, url, url_match_mode)
+    f_meta = fetcher_pool.submit(_fetch_page_meta, url)
+
+    page_meta = f_meta.result()  # 通常 1-3 秒で完了
+
+    # Step 2: page_meta だけで判定可能な軸 (Ahrefs不要) を先行起動
+    llm_pool = ThreadPoolExecutor(max_workers=6)
+    axis_futures: dict = {}
+    for meta in _AXIS_META:
+        if not meta["needs_ahrefs"]:
+            axis_futures[meta["key"]] = llm_pool.submit(
+                _call_axis, client, url, meta["key"], meta["name"], page_meta, None
+            )
+
+    # Step 3: Ahrefs 完了を待ち、残りの軸 + サマリーを起動
+    ahrefs_data = f_ahrefs.result()
+    fetcher_pool.shutdown(wait=False)
+
+    for meta in _AXIS_META:
+        if meta["needs_ahrefs"]:
+            axis_futures[meta["key"]] = llm_pool.submit(
+                _call_axis, client, url, meta["key"], meta["name"], page_meta, ahrefs_data
+            )
+    f_summary = llm_pool.submit(_call_summary, client, url, page_meta, ahrefs_data)
+
+    # Step 4: 全 call の結果を取得 (各 call は独立に失敗しうる)
+    axes_result: dict = {}
+    axis_errors: list = []
+    for meta in _AXIS_META:
+        future = axis_futures[meta["key"]]
+        try:
+            data = future.result(timeout=240)
+        except Exception as e:
+            data = {"issues": [], "passed": [], "_error": f"{meta['name']}: {str(e)[:200]}"}
+        axes_result[meta["key"]] = _normalize_axis(data)
+        if isinstance(data, dict) and data.get("_error"):
+            axis_errors.append(data["_error"])
+
+    try:
+        summary_data = f_summary.result(timeout=240)
+    except Exception as e:
+        summary_data = {"summary": {}, "contradictions": [], "donts": [], "sources": [], "_error": f"サマリー: {str(e)[:200]}"}
+    if isinstance(summary_data, dict) and summary_data.get("_error"):
+        axis_errors.append(summary_data["_error"])
+
+    llm_pool.shutdown(wait=False)
+
+    # Step 5: マージ + スコア再計算 (実 issues 件数ベース、LLM の自己申告は信用しない)
+    summary = summary_data.get("summary", {}) if isinstance(summary_data, dict) else {}
+    if not isinstance(summary, dict):
+        summary = {}
+
+    summary_axes = []
+    total_score = 0
+    for meta in _AXIS_META:
+        issues_n = len(axes_result[meta["key"]].get("issues", []))
+        score = round(((meta["total"] - issues_n) / meta["total"]) * 20) if meta["total"] > 0 else 0
+        score = max(0, min(20, score))
+        total_score += score
+        summary_axes.append({
+            "key": meta["key"],
+            "name": meta["name"],
+            "score": score,
+            "issues": issues_n,
+            "total": meta["total"],
+        })
+    summary["axes"] = summary_axes
+    summary["total_score"] = total_score
+    summary.setdefault("strengths", "")
+    summary.setdefault("concerns", "")
+    summary.setdefault("priority_action", "")
+
+    result = {
+        "target_url": url,
+        "summary": summary,
+        "url_meta": page_meta,
+        "axes": axes_result,
+        "ahrefs": ahrefs_data,
+        "contradictions": summary_data.get("contradictions", []) if isinstance(summary_data, dict) else [],
+        "donts": summary_data.get("donts", []) if isinstance(summary_data, dict) else [],
+        "sources": summary_data.get("sources", []) if isinstance(summary_data, dict) else [],
+    }
+    if axis_errors:
+        # 一部 call が失敗した場合: アプリは動かしつつ警告だけ残す
+        result["_warnings"] = axis_errors
+    return result
 
 
 def analyze_site(
