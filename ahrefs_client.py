@@ -135,13 +135,16 @@ def resolve_target_and_mode(url: str, ui_mode: str) -> tuple[str, str]:
     """UI上の一致モードを Ahrefs API の (target, mode) に変換する。
 
     ui_mode:
-      - 完全一致 → exact (target = フルURL)
+      - 完全一致 → exact (target = フルURL、末尾スラッシュ含めて保持)
       - 部分一致 → prefix (target = フルURL)
       - ドメイン一致 → domain (target = ドメイン)
       - サブドメイン含む → subdomains (target = ドメイン)
+
+    注意: 完全一致時に末尾スラッシュを削ると Ahrefs Web UI と URL が
+    別物扱いされ集計値がズレるため、入力 URL をそのまま渡す。
     """
     if ui_mode == "完全一致":
-        return (url.rstrip("/"), "exact")
+        return (url, "exact")
     if ui_mode == "部分一致":
         return (url, "prefix")
     if ui_mode == "サブドメイン含む":
@@ -152,15 +155,18 @@ def resolve_target_and_mode(url: str, ui_mode: str) -> tuple[str, str]:
 
 # ─── 公開関数 ──────────────────────────────────────────
 
-def _count_dofollow_refdomains(domain: str, max_count: int = 2000) -> Optional[int]:
+def _count_dofollow_refdomains(target: str, mode: str = "domain", max_count: int = 2000) -> Optional[int]:
     """非スパム & dofollow リンクのある refdomain 数を取得。
 
     正しいエンドポイントは `/site-explorer/refdomains` (Ahrefs API v3)。
     `referring-domains` は 404 を返す古い別名。
 
+    target/mode は呼び出し側のユーザー選択を尊重する (例: 「完全一致」UI なら
+    target=https://example.com, mode=exact)。Ahrefs Web UI と同じ数字になるよう
+    history はデフォルトの all_time を使う (live と all で大幅に値が変わるため)。
+
     `backlinks-stats` には dofollow 内訳がないので、`refdomains` を
     `dofollow_links > 0 AND is_spam = false` でフィルタして件数を数える。
-    `history=live` で live refdomains のみに限定して処理を軽くする。
 
     Returns: 件数(整数)。API 失敗時 None。
     """
@@ -173,15 +179,14 @@ def _count_dofollow_refdomains(domain: str, max_count: int = 2000) -> Optional[i
     resp = _api_get(
         "site-explorer/refdomains",
         {
-            "target": domain,
-            "mode": "domain",
+            "target": target,
+            "mode": mode,
             "protocol": "both",
-            "history": "live",
             "select": "domain",
             "where": where_filter,
             "limit": max_count,
         },
-        timeout=60,  # where フィルタは重め。失敗時はメイン処理を止めない
+        timeout=90,  # where + all_time は重め。タイムアウトを長めに確保
     )
     _record_raw("refdomains-dofollow", resp)
     if not resp:
@@ -209,9 +214,11 @@ def get_site_metrics(target: str, mode: str = "domain") -> dict:
     today_iso = datetime.utcnow().strftime("%Y-%m-%d")
     common = {"target": target, "mode": mode, "protocol": "both"}
 
-    # ─── DR と 被リンク統計はドメイン単位の指標 ───
-    # ユーザーが「完全一致 (exact)」を選んでも、DR/被リンクは本質的にドメインレベルで集計されるため
-    # 常に domain モード + ドメイン名で取得し直す (これをしないと exact 一致のURLにだけ向く RD が0で出る)
+    # ─── DR だけはドメイン単位の指標 ───
+    # DR は「ドメインの強さ」指標で URL 固有値ではないため、ユーザーが exact を
+    # 選んでも domain モードでドメイン名から取得する (URL を渡すと値が取れない)。
+    # backlinks-stats / refdomains は逆に、ユーザーモードを尊重して
+    # Ahrefs Web UI と同じ集計範囲(完全一致なら exact)で値を返す。
     domain_target = _normalize_domain(target)
     domain_common = {"target": domain_target, "mode": "domain", "protocol": "both"}
 
@@ -234,7 +241,8 @@ def get_site_metrics(target: str, mode: str = "domain") -> dict:
         return resp
 
     def _fetch_backlinks() -> Optional[dict]:
-        resp = _api_get("site-explorer/backlinks-stats", {**domain_common, "date": today_iso})
+        # ユーザーモード尊重 (完全一致なら exact 集計、Ahrefs Web UI の数字と整合)
+        resp = _api_get("site-explorer/backlinks-stats", {**common, "date": today_iso})
         _record_raw("backlinks-stats", resp)
         return resp
 
@@ -243,7 +251,8 @@ def get_site_metrics(target: str, mode: str = "domain") -> dict:
         f_dr = executor.submit(_fetch_dr)
         f_traffic = executor.submit(_fetch_traffic)
         f_backlinks = executor.submit(_fetch_backlinks)
-        f_dofollow = executor.submit(_count_dofollow_refdomains, domain_target)
+        # dofollow refdomains もユーザーモードで取得 (Ahrefs Web UI と整合)
+        f_dofollow = executor.submit(_count_dofollow_refdomains, target, mode)
 
         dr_resp = f_dr.result()
         metrics_resp = f_traffic.result()
@@ -264,10 +273,14 @@ def get_site_metrics(target: str, mode: str = "domain") -> dict:
         or _safe_get(metrics_resp, "metrics", "indexed_pages", default=None)
         or _safe_get(metrics_resp, "pages", default=None)
     )
+    # Ahrefs Web UI の「被リンク元ドメイン (全体)」は filterLiveOnly=0,
+    # history=all で all_time_refdomains に対応する (live_refdomains は現存のみ)。
+    # Web UI の数字と整合させるため all_time_refdomains を優先する。
     rd_total = (
-        _safe_get(rd_resp, "metrics", "live_refdomains", default=None)
+        _safe_get(rd_resp, "metrics", "all_time_refdomains", default=None)
+        or _safe_get(rd_resp, "metrics", "live_refdomains", default=None)
         or _safe_get(rd_resp, "metrics", "refdomains", default=None)
-        or _safe_get(rd_resp, "metrics", "all_time_refdomains", default=None)
+        or _safe_get(rd_resp, "all_time_refdomains", default=None)
         or _safe_get(rd_resp, "live_refdomains", default=None)
         or _safe_get(rd_resp, "refdomains", default=None)
         or _safe_get(rd_resp, "backlinks_stats", "refdomains", default=None)
