@@ -12,6 +12,7 @@ import os
 import json
 import logging
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Optional, Any
@@ -77,35 +78,67 @@ def _record_raw(endpoint: str, response: Optional[dict]) -> None:
         _LAST_RAW_RESPONSES[endpoint] = response
 
 
-def _api_get(path: str, params: dict, timeout: int = DEFAULT_TIMEOUT) -> Optional[dict]:
-    """Ahrefs API に GET リクエスト。エラー時は None を返す。"""
+def _api_get(path: str, params: dict, timeout: int = DEFAULT_TIMEOUT, max_retries: int = 2) -> Optional[dict]:
+    """Ahrefs API に GET リクエスト。
+
+    一過性エラー (5xx / 429 / read timeout / ネットワークエラー) は最大
+    `max_retries` 回まで自動リトライ。1秒, 2秒の exponential backoff。
+    永続エラー (401/403/4xx) はリトライせず即 None。
+    全リトライ失敗時のみ _record_error にエラーを残す。
+    """
     url = f"{API_BASE}/{path.lstrip('/')}"
-    try:
-        response = requests.get(
-            url, headers=_get_headers(), params=params, timeout=timeout
-        )
-        if response.status_code == 401:
-            err = f"401 認証エラー (Ahrefs token無効/期限切れ): {path}"
-            logger.error(err)
-            _record_error(err)
+    last_err: Optional[str] = None
+    for attempt in range(max_retries + 1):
+        try:
+            response = requests.get(
+                url, headers=_get_headers(), params=params, timeout=timeout
+            )
+            # 永続エラー: リトライしない
+            if response.status_code == 401:
+                err = f"401 認証エラー (Ahrefs token無効/期限切れ): {path}"
+                logger.error(err)
+                _record_error(err)
+                return None
+            if response.status_code == 403:
+                err = f"403 アクセス権限なし (プラン不足の可能性): {path}"
+                logger.error(err)
+                _record_error(err)
+                return None
+            # 一過性エラー: 5xx と 429 (rate limit) はリトライ
+            if response.status_code >= 500 or response.status_code == 429:
+                body = response.text[:200].replace("\n", " ")
+                last_err = f"{response.status_code}: {body} ({path})"
+                logger.warning(f"Ahrefs API transient error (attempt {attempt + 1}/{max_retries + 1}): {last_err}")
+                if attempt < max_retries:
+                    time.sleep(2 ** attempt)  # 1秒, 2秒, ...
+                    continue
+                _record_error(last_err)
+                return None
+            # その他 4xx: リトライしない (パラメータエラーなど)
+            if response.status_code >= 400:
+                body = response.text[:200].replace("\n", " ")
+                err = f"{response.status_code}: {body} ({path})"
+                logger.warning(f"Ahrefs API error: {err}")
+                _record_error(err)
+                return None
+            return response.json()
+        except requests.Timeout:
+            last_err = f"タイムアウト ({timeout}秒): {path}"
+            logger.warning(f"Ahrefs API timeout (attempt {attempt + 1}/{max_retries + 1}): {path}")
+            if attempt < max_retries:
+                time.sleep(2 ** attempt)
+                continue
+            _record_error(last_err)
             return None
-        if response.status_code == 403:
-            err = f"403 アクセス権限なし (プラン不足の可能性): {path}"
-            logger.error(err)
-            _record_error(err)
+        except requests.RequestException as e:
+            last_err = f"ネットワークエラー: {str(e)[:200]} ({path})"
+            logger.warning(f"Ahrefs API network error (attempt {attempt + 1}/{max_retries + 1}): {last_err}")
+            if attempt < max_retries:
+                time.sleep(2 ** attempt)
+                continue
+            _record_error(last_err)
             return None
-        if response.status_code >= 400:
-            body = response.text[:200].replace("\n", " ")
-            err = f"{response.status_code}: {body} ({path})"
-            logger.warning(f"Ahrefs API error: {err}")
-            _record_error(err)
-            return None
-        return response.json()
-    except requests.RequestException as e:
-        err = f"ネットワークエラー: {str(e)[:200]} ({path})"
-        logger.error(err)
-        _record_error(err)
-        return None
+    return None
 
 
 def _normalize_domain(domain: str) -> str:
