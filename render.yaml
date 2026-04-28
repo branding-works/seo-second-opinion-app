@@ -5,8 +5,9 @@ services:
   - type: web
     name: seo-second-opinion
     runtime: python
-    plan: free  # Free tier (15分非アクティブで sleep)。商用利用は starter ($7/月) 推奨
-    buildCommand: pip install -r requirements.txt
+    plan: starter  # 商用利用 ($7/月)。sleep なし & 永続ビルドキャッシュ
+    # uv (Rust製の高速 pip 代替) を使ってパッケージインストールを ~3倍高速化
+    buildCommand: pip install uv && uv pip install --system -r requirements.txt
     startCommand: streamlit run app.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true --browser.gatherUsageStats=false
     envVars:
       - key: PYTHON_VERSION

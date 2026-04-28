@@ -1,7 +1,7 @@
-streamlit>=1.32.0
-anthropic>=0.40.0
-plotly>=5.20.0
-requests>=2.31.0
-python-dotenv>=1.0.0
-pandas>=2.0.0
-psycopg2-binary>=2.9.9
+streamlit==1.56.0
+anthropic==0.97.0
+plotly==6.7.0
+requests==2.33.1
+python-dotenv==1.2.2
+pandas==3.0.2
+psycopg2-binary==2.9.12
