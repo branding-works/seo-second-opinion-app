@@ -162,8 +162,10 @@ def _count_dofollow_refdomains(target: str, mode: str = "domain", max_count: int
     `referring-domains` は 404 を返す古い別名。
 
     target/mode は呼び出し側のユーザー選択を尊重する (例: 「完全一致」UI なら
-    target=https://example.com, mode=exact)。Ahrefs Web UI と同じ数字になるよう
-    history はデフォルトの all_time を使う (live と all で大幅に値が変わるため)。
+    target=https://example.com, mode=exact)。Ahrefs Web UI の「Referring
+    domains」表示と整合させるため history=live で現存 refdomains に限定する。
+    all_time だと過去に lost した分まで含み実数の数倍になる (例: live=90 vs
+    all_time=427 で約4.7倍)。
 
     `backlinks-stats` には dofollow 内訳がないので、`refdomains` を
     `dofollow_links > 0 AND is_spam = false` でフィルタして件数を数える。
@@ -182,11 +184,12 @@ def _count_dofollow_refdomains(target: str, mode: str = "domain", max_count: int
             "target": target,
             "mode": mode,
             "protocol": "both",
+            "history": "live",
             "select": "domain",
             "where": where_filter,
             "limit": max_count,
         },
-        timeout=90,  # where + all_time は重め。タイムアウトを長めに確保
+        timeout=60,  # live なら軽い (all_time に比べてスキャン対象が 1/4 程度)
     )
     _record_raw("refdomains-dofollow", resp)
     if not resp:
@@ -273,14 +276,13 @@ def get_site_metrics(target: str, mode: str = "domain") -> dict:
         or _safe_get(metrics_resp, "metrics", "indexed_pages", default=None)
         or _safe_get(metrics_resp, "pages", default=None)
     )
-    # Ahrefs Web UI の「被リンク元ドメイン (全体)」は filterLiveOnly=0,
-    # history=all で all_time_refdomains に対応する (live_refdomains は現存のみ)。
-    # Web UI の数字と整合させるため all_time_refdomains を優先する。
+    # Ahrefs Web UI の「Referring domains (全体)」は実測値ベースで
+    # live_refdomains に近い (例: spc-jpn.co.jp で UI=98 vs API live=90)。
+    # all_time_refdomains は過去の lost を含み数倍になるため使わない。
     rd_total = (
-        _safe_get(rd_resp, "metrics", "all_time_refdomains", default=None)
-        or _safe_get(rd_resp, "metrics", "live_refdomains", default=None)
+        _safe_get(rd_resp, "metrics", "live_refdomains", default=None)
         or _safe_get(rd_resp, "metrics", "refdomains", default=None)
-        or _safe_get(rd_resp, "all_time_refdomains", default=None)
+        or _safe_get(rd_resp, "metrics", "all_time_refdomains", default=None)
         or _safe_get(rd_resp, "live_refdomains", default=None)
         or _safe_get(rd_resp, "refdomains", default=None)
         or _safe_get(rd_resp, "backlinks_stats", "refdomains", default=None)
