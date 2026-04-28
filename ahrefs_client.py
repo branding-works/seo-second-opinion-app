@@ -9,6 +9,7 @@ API ドキュメント: https://docs.ahrefs.com/docs/api/reference/
 """
 
 import os
+import json
 import logging
 from datetime import datetime
 from typing import Optional, Any
@@ -143,6 +144,37 @@ def resolve_target_and_mode(url: str, ui_mode: str) -> tuple[str, str]:
 
 # ─── 公開関数 ──────────────────────────────────────────
 
+def _count_dofollow_refdomains(domain: str, max_count: int = 1000) -> Optional[int]:
+    """非スパム & dofollow リンクのある refdomain 数を referring-domains で取得。
+
+    Ahrefs `backlinks-stats` には dofollow 内訳がないので、`referring-domains` で
+    `dofollow_links > 0 AND is_spam = false` のフィルタを適用して件数を数える。
+
+    Returns: 件数(整数)。API 失敗時 None。max_count を超える場合は max_count を返す。
+    """
+    where_filter = json.dumps({
+        "and": [
+            {"field": "dofollow_links", "is": ["gt", 0]},
+            {"field": "is_spam", "is": ["eq", False]},
+        ]
+    })
+    resp = _api_get("site-explorer/referring-domains", {
+        "target": domain,
+        "mode": "domain",
+        "protocol": "both",
+        "select": "domain",
+        "where": where_filter,
+        "limit": max_count,
+    })
+    _record_raw("referring-domains-dofollow", resp)
+    if not resp:
+        return None
+    rows = _safe_get(resp, "refdomains", default=None) or _safe_get(resp, "data", default=None)
+    if rows is None:
+        return None
+    return len(rows)
+
+
 def get_site_metrics(target: str, mode: str = "domain") -> dict:
     """サイト指標 (DR / 被リンク / 月間セッション)。
 
@@ -208,13 +240,10 @@ def get_site_metrics(target: str, mode: str = "domain") -> dict:
         or _safe_get(rd_resp, "refdomains", default=None)
         or _safe_get(rd_resp, "backlinks_stats", "refdomains", default=None)
     )
-    rd_dofollow = (
-        _safe_get(rd_resp, "metrics", "live_refdomains_dofollow", default=None)
-        or _safe_get(rd_resp, "metrics", "refdomains_dofollow", default=None)
-        or _safe_get(rd_resp, "metrics", "live_dofollow_refdomains", default=None)
-        or _safe_get(rd_resp, "live_refdomains_dofollow", default=None)
-        or _safe_get(rd_resp, "refdomains_dofollow", default=None)
-    )
+
+    # 価値あり (dofollow かつ 非スパム) のリンク元ドメイン数。
+    # Ahrefs `backlinks-stats` には dofollow 内訳がないので、`referring-domains` を where 句でフィルタしてカウントする。
+    rd_dofollow = _count_dofollow_refdomains(domain_target)
 
     # Fallback to mock if API failed for the main fields
     if dr is None and sessions is None:
