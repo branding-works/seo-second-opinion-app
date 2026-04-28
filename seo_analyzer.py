@@ -436,8 +436,10 @@ Ahrefs データ (Site Explorer):
     try:
         response = client.messages.create(
             model=get_model(),
-            # 出力上限。実出力は通常 6000~9000 トークン。12000 で安全マージン確保。
-            max_tokens=12000,
+            # 出力上限。Mode A の構造化出力は5軸 × issues + passed + contradictions
+            # + sources + donts と項目が多く、Sonnet 4.6 だと 12k では切れる
+            # ケースが確認されたため 16k を維持する。
+            max_tokens=16000,
             # システムプロンプトを ephemeral キャッシュ (5分TTL)。同セッション内の
             # 2回目以降の分析呼び出しで読み込み時間とコストが大幅削減される。
             system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
