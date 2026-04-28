@@ -32,12 +32,18 @@ from admin_ui import (
 # .env 読み込み
 load_dotenv()
 
-# DB 初期化 (テーブル作成は冪等)
-try:
-    db.init_db()
-except Exception as _db_err:
-    # DB が無くてもアプリ自体は動かす
-    pass
+
+# DB 初期化 (プロセスにつき1回だけ。Streamlit再実行のたびに Neon 接続するのを防ぐ)
+@st.cache_resource(show_spinner=False)
+def _init_db_once() -> bool:
+    try:
+        db.init_db()
+        return True
+    except Exception:
+        return False
+
+
+_init_db_once()
 
 
 # ─── ページ設定 ────────────────────────────────────────
