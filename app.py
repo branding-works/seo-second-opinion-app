@@ -847,6 +847,12 @@ if mode == "サイト分析":
                             st.code(err, language=None)
                     else:
                         st.caption("詳細エラーなし")
+            # live モードでも個別エンドポイントが失敗していればエラーを見せる
+            elif api_errors:
+                with st.expander(f"⚠ 個別 API エラー ({len(api_errors)}件)", expanded=True):
+                    st.caption("メイン指標は取得できているが、一部のエンドポイントで失敗。")
+                    for err in api_errors[:10]:
+                        st.code(err, language=None)
 
             # 診断: 生レスポンス (フィールド名のずれを確認するため)
             raw_responses = metrics.get("_raw_responses", {})

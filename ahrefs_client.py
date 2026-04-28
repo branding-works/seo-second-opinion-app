@@ -271,6 +271,9 @@ def get_site_metrics(target: str, mode: str = "domain") -> dict:
         "domain": target,
         "fetched_at": "Ahrefs API v3 (live)",
         "api_status": "live",
+        # 部分的な API 失敗(refdomains-dofollow など個別エンドポイント)を診断するため、
+        # live ステータス時もエラーリストは返しておく
+        "api_errors": get_last_api_errors(),
     }
 
 
