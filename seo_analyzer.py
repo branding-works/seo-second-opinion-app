@@ -634,6 +634,41 @@ def answer_question(question: str) -> str:
 
 # ─── Structured mock data (UI binding 用) ────────────────────
 
+def _static_mock_ahrefs(domain: str) -> dict:
+    """API呼び出しなしの純粋な静的モックデータ (初期表示用)。"""
+    return {
+        "metrics": {
+            "domain_rating": 42,
+            "monthly_organic_sessions": 12500,
+            "referring_domains_total": 287,
+            "referring_domains_quality": 152,
+            "organic_pages_count": 248,
+            "organic_pages_count_display": "248",
+            "domain": domain,
+            "fetched_at": "mock",
+            "api_status": "mock",
+        },
+        "top_keywords": [
+            {"keyword": "SEO 内部対策", "volume": 2300, "position": 3, "url": f"https://{domain}/blog/seo-guide", "traffic": 480},
+            {"keyword": "Core Web Vitals 改善", "volume": 1800, "position": 5, "url": f"https://{domain}/blog/core-web-vitals", "traffic": 320},
+            {"keyword": "canonical URL 設定", "volume": 1200, "position": 4, "url": f"https://{domain}/blog/canonical-url", "traffic": 240},
+            {"keyword": "構造化データ JSON-LD", "volume": 980, "position": 7, "url": f"https://{domain}/blog/structured-data", "traffic": 140},
+            {"keyword": "robots.txt 書き方", "volume": 850, "position": 6, "url": f"https://{domain}/blog/robots-txt", "traffic": 130},
+        ],
+        "top_pages": [
+            {"url": f"https://{domain}/blog/seo-guide", "estimated_sessions": 3200, "top_keyword": "SEO 内部対策", "top_keyword_volume": 2300},
+            {"url": f"https://{domain}/blog/core-web-vitals", "estimated_sessions": 2100, "top_keyword": "Core Web Vitals 改善", "top_keyword_volume": 1800},
+            {"url": f"https://{domain}/blog/canonical-url", "estimated_sessions": 1800, "top_keyword": "canonical URL 設定", "top_keyword_volume": 1200},
+        ],
+        "top_directories": [
+            {"directory": "/blog/", "pages": 142, "monthly_sessions": 8250, "share_pct": 66.0},
+            {"directory": "/service/", "pages": 18, "monthly_sessions": 1840, "share_pct": 14.7},
+            {"directory": "/case/", "pages": 32, "monthly_sessions": 1200, "share_pct": 9.6},
+        ],
+        "domain": domain,
+    }
+
+
 def _build_mock_structured(url: str) -> dict:
     """サイト分析の構造化モックデータ。app.py の _DEFAULT_DATA と同期する。"""
     HEXDOCS = "https://hexdocs.pm/google_api_content_warehouse/0.4.0/api-reference.html"
@@ -766,7 +801,7 @@ def _build_mock_structured(url: str) -> dict:
                 ],
             },
         },
-        "ahrefs": _gather_ahrefs_data(url),
+        "ahrefs": _static_mock_ahrefs(domain),  # API呼ばずに静的モック
         "contradictions": [
             {"public": "Gary Illyes「ドメイン全体の権威スコアは存在しない」", "internal": "siteAuthority 属性が存在", "source_label": "リーク", "source_url": HEXDOCS},
             {"public": "Gary Illyes「クリックは直接ランキングに使わない」", "internal": "NavBoost が13ヶ月のクリックデータを使用", "source_label": "訴訟", "source_url": DOJ_URL},
