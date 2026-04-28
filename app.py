@@ -828,8 +828,8 @@ if mode == "サイト分析":
                 )
 
             st.markdown("")
-            pages_count = metrics.get("organic_pages_count", 0)
-            st.info(f"**{pages_count}** ページが自然検索流入を獲得中 (Ahrefs 上位ページ)")
+            pages_display = metrics.get("organic_pages_count_display") or str(metrics.get("organic_pages_count", 0))
+            st.info(f"**{pages_display}** ページが自然検索流入を獲得中 (Ahrefs 上位ページ)")
 
             st.markdown("#### 流入貢献KW 上位10")
             domain_for_links = ahrefs.get("domain", "")

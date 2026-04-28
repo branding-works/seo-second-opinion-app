@@ -50,6 +50,26 @@ def _gather_ahrefs_data(url: str) -> dict:
     top_kw = get_top_keywords(domain)
     top_pg = get_top_pages(domain)
     top_dir = get_top_directories(domain)
+
+    # ページ数を top-pages の bulk 取得結果から推定
+    # (metrics エンドポイントは pages count を返さないため)
+    raw = get_last_raw_responses()
+    bulk_resp = raw.get("top-pages-bulk-for-directories")
+    if isinstance(bulk_resp, dict):
+        bulk_pages = (
+            bulk_resp.get("pages")
+            or bulk_resp.get("top_pages")
+            or bulk_resp.get("data")
+            or []
+        )
+        if bulk_pages and not metrics.get("organic_pages_count"):
+            page_count = len(bulk_pages)
+            # 500件取得した場合は「500+」扱い
+            metrics["organic_pages_count"] = page_count
+            metrics["organic_pages_count_display"] = (
+                f"{page_count}+" if page_count >= 500 else str(page_count)
+            )
+
     # 全エンドポイントの生レスポンスをmetricsに注入 (UI診断用)
     metrics["_raw_responses"] = get_last_raw_responses()
     return {
