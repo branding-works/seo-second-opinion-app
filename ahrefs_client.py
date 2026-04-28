@@ -170,23 +170,32 @@ def _count_dofollow_refdomains(target: str, mode: str = "domain", page_size: int
     `backlinks-stats` には dofollow 内訳がないので、`refdomains` を
     `dofollow_links > 0 AND is_spam = false` でフィルタして件数を数える。
 
-    Pagination 対応: Ahrefs API の limit は最大 1000 / リクエスト。
-    大規模サイト (n-works.link で価値あり 914 件など) では 1ページに収まらず
-    途中で切れて誤った件数を返してしまうため、offset を進めて全ページを集計する。
-    page_size=1000 × max_pages=10 で 最大 10000 件まで対応。
+    Pagination 戦略 — Cursor (seek key) 方式:
+    `/site-explorer/refdomains` は `offset` パラメータを **持たない**
+    (input schema 上に存在せず、渡すと 400: "The 'offset' parameter is not
+    supported." が返る)。さらにユーザープランで 1リクエスト最大 500 行程度に
+    打ち切られるため、`first_seen` を seek key として `where` 句に
+    `first_seen >= 直前ページ末尾の first_seen` を追加し、
+    `order_by=first_seen:asc` で安定ソートしながら全件を集計する。
+    境界で同一 first_seen の重複が起こりうるので set で domain dedup する。
 
     Returns: 件数(整数)。API 失敗時 None。
     """
-    where_filter = json.dumps({
-        "and": [
-            {"field": "dofollow_links", "is": ["gt", 0]},
-            {"field": "is_spam", "is": ["eq", False]},
-        ]
-    })
-    total = 0
+    base_filters = [
+        {"field": "dofollow_links", "is": ["gt", 0]},
+        {"field": "is_spam", "is": ["eq", False]},
+    ]
+
+    seen_domains: set = set()
     last_resp = None
-    offset = 0
+    last_first_seen: Optional[str] = None
     for page in range(max_pages):
+        if last_first_seen:
+            filters = base_filters + [
+                {"field": "first_seen", "is": ["gte", last_first_seen]}
+            ]
+        else:
+            filters = base_filters
         resp = _api_get(
             "site-explorer/refdomains",
             {
@@ -194,10 +203,10 @@ def _count_dofollow_refdomains(target: str, mode: str = "domain", page_size: int
                 "mode": mode,
                 "protocol": "both",
                 "history": "live",
-                "select": "domain",
-                "where": where_filter,
+                "select": "domain,first_seen",
+                "where": json.dumps({"and": filters}),
                 "limit": page_size,
-                "offset": offset,
+                "order_by": "first_seen:asc",
             },
             timeout=60,
         )
@@ -209,18 +218,33 @@ def _count_dofollow_refdomains(target: str, mode: str = "domain", page_size: int
             break
         last_resp = resp
         rows = _safe_get(resp, "refdomains", default=None) or _safe_get(resp, "data", default=None)
-        # 空配列 / None → これ以上データなし、終了
         if not rows:
             break
-        total += len(rows)
-        # 取れた件数で offset を進める。プラン制限で page_size 未満が返ってきても
-        # 次ページにまだ続きがあるケースに備え、空が返るまで叩き続ける
-        # (例: ユーザープランが 1リクエスト最大500件で page_size=1000 を要求しても
-        #  500件で切られて返ってくる。その場合 len(rows) < page_size でも次がある)
-        offset += len(rows)
-    # 最後のレスポンスだけ診断用に保存 (全ページの生データを保持するとメモリ過大)
+
+        added_this_page = 0
+        max_first_seen = last_first_seen
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            domain = r.get("domain")
+            if domain and domain not in seen_domains:
+                seen_domains.add(domain)
+                added_this_page += 1
+            fs = r.get("first_seen")
+            if fs and (max_first_seen is None or fs > max_first_seen):
+                max_first_seen = fs
+
+        # seek key が前進しなかった (= 同一 first_seen のデータが page_size 以上ある)
+        # → 1ページに収まらないので break してそれまでの集計を返す
+        if max_first_seen == last_first_seen:
+            break
+        # 全件 dedup で消えた = 既に取得済みのデータ → 終了
+        if added_this_page == 0:
+            break
+        last_first_seen = max_first_seen
+
     _record_raw("refdomains-dofollow", last_resp)
-    return total
+    return len(seen_domains)
 
 
 def get_site_metrics(target: str, mode: str = "domain") -> dict:
