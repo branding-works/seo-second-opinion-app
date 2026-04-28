@@ -185,8 +185,8 @@ def _count_dofollow_refdomains(target: str, mode: str = "domain", page_size: int
     })
     total = 0
     last_resp = None
+    offset = 0
     for page in range(max_pages):
-        offset = page * page_size
         resp = _api_get(
             "site-explorer/refdomains",
             {
@@ -209,12 +209,15 @@ def _count_dofollow_refdomains(target: str, mode: str = "domain", page_size: int
             break
         last_resp = resp
         rows = _safe_get(resp, "refdomains", default=None) or _safe_get(resp, "data", default=None)
-        if rows is None:
+        # 空配列 / None → これ以上データなし、終了
+        if not rows:
             break
         total += len(rows)
-        # ページサイズ未満なら最終ページ
-        if len(rows) < page_size:
-            break
+        # 取れた件数で offset を進める。プラン制限で page_size 未満が返ってきても
+        # 次ページにまだ続きがあるケースに備え、空が返るまで叩き続ける
+        # (例: ユーザープランが 1リクエスト最大500件で page_size=1000 を要求しても
+        #  500件で切られて返ってくる。その場合 len(rows) < page_size でも次がある)
+        offset += len(rows)
     # 最後のレスポンスだけ診断用に保存 (全ページの生データを保持するとメモリ過大)
     _record_raw("refdomains-dofollow", last_resp)
     return total
