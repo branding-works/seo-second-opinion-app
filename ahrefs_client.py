@@ -155,7 +155,7 @@ def resolve_target_and_mode(url: str, ui_mode: str) -> tuple[str, str]:
 
 # ─── 公開関数 ──────────────────────────────────────────
 
-def _count_dofollow_refdomains(target: str, mode: str = "domain", max_count: int = 2000) -> Optional[int]:
+def _count_dofollow_refdomains(target: str, mode: str = "domain", page_size: int = 1000, max_pages: int = 10) -> Optional[int]:
     """非スパム & dofollow リンクのある refdomain 数を取得。
 
     正しいエンドポイントは `/site-explorer/refdomains` (Ahrefs API v3)。
@@ -170,6 +170,11 @@ def _count_dofollow_refdomains(target: str, mode: str = "domain", max_count: int
     `backlinks-stats` には dofollow 内訳がないので、`refdomains` を
     `dofollow_links > 0 AND is_spam = false` でフィルタして件数を数える。
 
+    Pagination 対応: Ahrefs API の limit は最大 1000 / リクエスト。
+    大規模サイト (n-works.link で価値あり 914 件など) では 1ページに収まらず
+    途中で切れて誤った件数を返してしまうため、offset を進めて全ページを集計する。
+    page_size=1000 × max_pages=10 で 最大 10000 件まで対応。
+
     Returns: 件数(整数)。API 失敗時 None。
     """
     where_filter = json.dumps({
@@ -178,26 +183,41 @@ def _count_dofollow_refdomains(target: str, mode: str = "domain", max_count: int
             {"field": "is_spam", "is": ["eq", False]},
         ]
     })
-    resp = _api_get(
-        "site-explorer/refdomains",
-        {
-            "target": target,
-            "mode": mode,
-            "protocol": "both",
-            "history": "live",
-            "select": "domain",
-            "where": where_filter,
-            "limit": max_count,
-        },
-        timeout=60,  # live なら軽い (all_time に比べてスキャン対象が 1/4 程度)
-    )
-    _record_raw("refdomains-dofollow", resp)
-    if not resp:
-        return None
-    rows = _safe_get(resp, "refdomains", default=None) or _safe_get(resp, "data", default=None)
-    if rows is None:
-        return None
-    return len(rows)
+    total = 0
+    last_resp = None
+    for page in range(max_pages):
+        offset = page * page_size
+        resp = _api_get(
+            "site-explorer/refdomains",
+            {
+                "target": target,
+                "mode": mode,
+                "protocol": "both",
+                "history": "live",
+                "select": "domain",
+                "where": where_filter,
+                "limit": page_size,
+                "offset": offset,
+            },
+            timeout=60,
+        )
+        if not resp:
+            # 1ページ目で失敗 → None。途中失敗ならそれまでの合計を返す
+            if page == 0:
+                _record_raw("refdomains-dofollow", None)
+                return None
+            break
+        last_resp = resp
+        rows = _safe_get(resp, "refdomains", default=None) or _safe_get(resp, "data", default=None)
+        if rows is None:
+            break
+        total += len(rows)
+        # ページサイズ未満なら最終ページ
+        if len(rows) < page_size:
+            break
+    # 最後のレスポンスだけ診断用に保存 (全ページの生データを保持するとメモリ過大)
+    _record_raw("refdomains-dofollow", last_resp)
+    return total
 
 
 def get_site_metrics(target: str, mode: str = "domain") -> dict:
