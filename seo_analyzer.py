@@ -255,6 +255,18 @@ _AXIS_SCHEMA = {
                 "required": ["name"],
             },
         },
+        "unverifiable": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "reason": {"type": "string"},
+                    "url": {"type": "string"},
+                },
+                "required": ["name"],
+            },
+        },
     },
     "required": ["issues", "passed"],
 }
@@ -487,11 +499,11 @@ def _build_empty_structured(url: str, ahrefs_data: dict, page_meta: dict, error:
         },
         "url_meta": page_meta,
         "axes": {
-            "internal_seo": {"issues": [], "passed": []},
-            "external_seo": {"issues": [], "passed": []},
-            "content_seo": {"issues": [], "passed": []},
-            "eeat": {"issues": [], "passed": []},
-            "ai_exposure": {"issues": [], "passed": []},
+            "internal_seo": {"issues": [], "passed": [], "unverifiable": []},
+            "external_seo": {"issues": [], "passed": [], "unverifiable": []},
+            "content_seo": {"issues": [], "passed": [], "unverifiable": []},
+            "eeat": {"issues": [], "passed": [], "unverifiable": []},
+            "ai_exposure": {"issues": [], "passed": [], "unverifiable": []},
         },
         "ahrefs": empty_ahrefs,
         "contradictions": [],
@@ -531,12 +543,13 @@ def _call_axis(
 
 要求:
 - **{axis_name} 軸のみ**を評価する。他の軸の指摘は出さない。
-- issues (指摘事項) と passed (通過項目) を返す。サマリー / contradictions / donts / sources はこの call では返さない (別 call で扱う)。
-- **passed (通過項目) は必ず埋める**。「課題なし = passed 空配列」ではない。`passed の件数 ≒ {axis_total} − issues の件数` になるよう、合格と判定したチェック項目を可能な限り列挙する。
-- 各 passed 項目は `name` (チェックした観点・項目名、例: "canonical タグの自己参照", "OGP og:image 設定") と `url` (実際にチェックした対象ドメイン配下の URL) の dict で返す。url は省略せず、対象 URL のドメイン配下の実在 URL を入れる。
-- evidence は最低1件、url 必須。ラベルは「公式」「QRG」「リーク」「訴訟」「VRP」「特許」「二次解説」「Googler発言」のいずれか
-- check_url は対象ドメイン配下の実在 URL (与えられた URL のドメインを使う)
-- 推測の評価は priority "低" とし、observation_sub に「推測扱い」と書く
+- 各チェック項目は **issues / passed / unverifiable のいずれか1つ**に分類する。3つの合計が概ね {axis_total} になるのが目安。
+- **issues (実害ある課題)**: 与えられた HTML / メタ情報 / Ahrefs データから「問題あり」と確認できたものだけ入れる。**推測や未検証の項目は入れない**。
+- **passed (通過項目)**: 与えられたデータから「問題なし」と確認できたもの。`name` (チェックした観点・項目名、例: "canonical タグの自己参照", "OGP og:image 設定") と `url` (実際にチェックした対象ドメイン配下の URL) の dict で返す。
+- **unverifiable (確認不可)**: HTML や提供データだけでは合否判定できない項目はここに入れる。例: GSC 連携、サーバ Core Web Vitals 実測、内部リンクグラフ全体、第三者サイテーション、被リンク先の品質詳細など。`name` (項目名) と `reason` (なぜ確認できないか、簡潔に) と `url` (対象ドメイン配下の代表 URL) の dict で返す。
+- **passed と unverifiable は必ず埋める**。「課題なし = passed 空配列」ではない。`issues + passed + unverifiable の件数 ≒ {axis_total}` になるよう、軸内のチェック項目を取りこぼさず分類する。
+- evidence (issues のみ) は最低1件、url 必須。ラベルは「公式」「QRG」「リーク」「訴訟」「VRP」「特許」「二次解説」「Googler発言」のいずれか
+- check_url (issues のみ) は対象ドメイン配下の実在 URL
 - 各 issue は priority を "高" / "中" / "低" のいずれかにする
 
 提出は submit_axis_{axis_key} ツールを使うこと (必須)。"""
@@ -552,7 +565,7 @@ def _call_axis(
         )
     except Exception as e:
         logger.error(f"Axis call failed ({axis_key}): {e}")
-        return {"issues": [], "passed": [], "_error": f"{axis_name}: {str(e)[:200]}"}
+        return {"issues": [], "passed": [], "unverifiable": [], "_error": f"{axis_name}: {str(e)[:200]}"}
 
     for block in response.content:
         if getattr(block, "type", None) == "tool_use":
@@ -560,7 +573,7 @@ def _call_axis(
             if isinstance(input_data, dict):
                 return input_data
     logger.warning(f"Axis {axis_key}: tool_use block missing")
-    return {"issues": [], "passed": [], "_error": f"{axis_name}: ツール呼び出しなし"}
+    return {"issues": [], "passed": [], "unverifiable": [], "_error": f"{axis_name}: ツール呼び出しなし"}
 
 
 def _call_summary(
@@ -611,14 +624,16 @@ Ahrefs データ (Site Explorer):
 
 
 def _normalize_axis(axis_data) -> dict:
-    """軸 call の戻り値を {issues: [...], passed: [...]} に正規化。"""
+    """軸 call の戻り値を {issues, passed, unverifiable} に正規化。"""
     if not isinstance(axis_data, dict):
-        return {"issues": [], "passed": []}
+        return {"issues": [], "passed": [], "unverifiable": []}
     issues = axis_data.get("issues", [])
     passed = axis_data.get("passed", [])
+    unverifiable = axis_data.get("unverifiable", [])
     return {
         "issues": issues if isinstance(issues, list) else [],
         "passed": passed if isinstance(passed, list) else [],
+        "unverifiable": unverifiable if isinstance(unverifiable, list) else [],
     }
 
 
@@ -673,7 +688,7 @@ def analyze_site_structured(
         try:
             data = future.result(timeout=240)
         except Exception as e:
-            data = {"issues": [], "passed": [], "_error": f"{meta['name']}: {str(e)[:200]}"}
+            data = {"issues": [], "passed": [], "unverifiable": [], "_error": f"{meta['name']}: {str(e)[:200]}"}
         axes_result[meta["key"]] = _normalize_axis(data)
         if isinstance(data, dict) and data.get("_error"):
             axis_errors.append(data["_error"])

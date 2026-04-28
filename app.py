@@ -539,9 +539,10 @@ def _scores_dict_from_data(data: dict) -> dict:
 
 
 def _render_axis_content(axis_data: dict):
-    """課題サマリタブ内・各軸の指摘事項+通過項目を描画。"""
+    """課題サマリタブ内・各軸の指摘事項+通過項目+確認不可項目を描画。"""
     issues = axis_data.get("issues", [])
     passed = axis_data.get("passed", [])
+    unverifiable = axis_data.get("unverifiable", [])
 
     if issues:
         st.markdown("#### 指摘事項")
@@ -582,6 +583,25 @@ def _render_axis_content(axis_data: dict):
                 items.append(f"- ✓ {name} [↗]({url_p})")
             else:
                 items.append(f"- ✓ {name}")
+        st.markdown("\n".join(items))
+
+    if unverifiable:
+        st.markdown(f"#### ⓘ 確認不可 ({len(unverifiable)}件)")
+        st.caption("提供された HTML / メタ情報 / Ahrefs データだけでは合否判定できなかった項目。スコアの減点対象には含めていません。別途 GSC・実機計測などで確認が必要です。")
+        items = []
+        for u in unverifiable:
+            if not isinstance(u, dict):
+                items.append(f"- ⓘ {u}")
+                continue
+            name = u.get("name", "")
+            reason = u.get("reason", "")
+            url_u = u.get("url", "")
+            head = f"- ⓘ **{name}**" if name else "- ⓘ"
+            if reason:
+                head += f" — {reason}"
+            if url_u:
+                head += f" [↗]({url_u})"
+            items.append(head)
         st.markdown("\n".join(items))
 
 
