@@ -73,7 +73,9 @@ def _gather_ahrefs_data(url: str, url_match_mode: str = "ドメイン一致") ->
         top_dir = f_top_dir.result()
         brand_radar = f_brand_radar.result()
 
-    # 流入URL に最有力KWを紐付け (organic-keywords の best_position_url で照合)
+    # 流入URL に最有力KWを紐付け
+    # 優先順: top-pages が直接返す top_keyword/top_keyword_volume → organic-keywords とのURL照合
+    # (top-pages が欠損したケース、または top_keyword フィールドが null のページ用にフォールバック)
     url_to_kw: dict[str, dict] = {}
     for kw in top_kw:
         kw_url = kw.get("url", "")
@@ -84,6 +86,9 @@ def _gather_ahrefs_data(url: str, url_match_mode: str = "ドメイン一致") ->
                 "volume": kw.get("volume", 0),
             }
     for pg in top_pg:
+        # top-pages 自身の top_keyword が埋まっていればそれを採用
+        if pg.get("top_keyword"):
+            continue
         pg_url = pg.get("url", "")
         match = url_to_kw.get(pg_url)
         if match:

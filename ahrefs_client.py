@@ -473,7 +473,11 @@ def get_top_keywords(target: str, mode: str = "domain", limit: int = 10) -> list
 
 
 def get_top_pages(target: str, mode: str = "domain", limit: int = 10) -> list[dict]:
-    """流入URL 上位N件。target/mode は Ahrefs API パラメータ。"""
+    """流入URL 上位N件。target/mode は Ahrefs API パラメータ。
+
+    `top_keyword` と `top_keyword_volume` も同時取得することで、各ページの
+    代表 KW を 1 リクエストで埋める (organic-keywords の上位 N 件と URL が
+    一致しないページでも空欄にならない)。"""
     if not has_ahrefs_token():
         return _mock_top_pages()
 
@@ -487,7 +491,7 @@ def get_top_pages(target: str, mode: str = "domain", limit: int = 10) -> list[di
             "limit": limit,
             "date": today_iso,
             "order_by": "sum_traffic:desc",
-            "select": "url,sum_traffic",
+            "select": "url,sum_traffic,top_keyword,top_keyword_volume",
         },
     )
     _record_raw("top-pages", resp)
@@ -506,6 +510,9 @@ def get_top_pages(target: str, mode: str = "domain", limit: int = 10) -> list[di
         result.append({
             "url": url_full,  # フルURL のまま保持
             "estimated_sessions": p.get("sum_traffic", p.get("traffic", 0)),
+            # 各ページの代表 KW を top-pages から直接取得 (空なら organic-keywords 紐付けに任せる)
+            "top_keyword": p.get("top_keyword") or "",
+            "top_keyword_volume": p.get("top_keyword_volume") or 0,
         })
     return result
 
