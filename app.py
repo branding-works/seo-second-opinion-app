@@ -874,23 +874,35 @@ if mode == "サイト分析":
             if api_status and api_status != "live":
                 with st.expander(f"⚠ Ahrefs API ステータス: {api_status}", expanded=False):
                     if api_errors:
-                        st.markdown("**API エラー詳細:**")
-                        for err in api_errors[:10]:
-                            st.code(err, language=None)
+                        st.markdown("**API エラー詳細:** (右上のコピーアイコンで一括コピー)")
+                        st.code("\n\n".join(api_errors[:10]), language=None)
                     else:
                         st.caption("詳細エラーなし")
             # live モードでも個別エンドポイントが失敗していればエラーを見せる
             elif api_errors:
                 with st.expander(f"⚠ 個別 API エラー ({len(api_errors)}件)", expanded=True):
-                    st.caption("メイン指標は取得できているが、一部のエンドポイントで失敗。")
-                    for err in api_errors[:10]:
-                        st.code(err, language=None)
+                    st.caption("メイン指標は取得できているが、一部のエンドポイントで失敗。右上のコピーアイコンで一括コピー可能。")
+                    st.code("\n\n".join(api_errors[:10]), language=None)
 
             # 診断: 生レスポンス (フィールド名のずれを確認するため)
             raw_responses = metrics.get("_raw_responses", {})
             if raw_responses:
                 with st.expander("🔧 診断: Ahrefs API 生レスポンス (フィールド名確認用)", expanded=False):
                     import json as _json
+                    # 一括コピー用: 全 endpoint+response を 1 つの code block に連結 (右上アイコンでクリップボードへ)
+                    st.caption("📋 全レスポンスをまとめてコピーする場合は、下のブロック右上のコピーアイコンを使用。")
+                    dump_lines = []
+                    for endpoint, resp in raw_responses.items():
+                        dump_lines.append(f"=== {endpoint} ===")
+                        if resp is None:
+                            dump_lines.append("(None - エラー)")
+                        else:
+                            dump_lines.append(_json.dumps(resp, ensure_ascii=False, indent=2)[:3000])
+                        dump_lines.append("")
+                    st.code("\n".join(dump_lines), language="json")
+                    st.divider()
+                    # 個別表示 (見やすさ重視)
+                    st.caption("以下は endpoint 別の個別表示 (各ブロック右上アイコンで個別コピー)。")
                     for endpoint, resp in raw_responses.items():
                         st.markdown(f"**`{endpoint}`**")
                         if resp is None:

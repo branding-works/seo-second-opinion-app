@@ -16,6 +16,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Optional, Any
+from urllib.parse import urlparse
 
 import requests
 
@@ -300,10 +301,29 @@ def get_site_metrics(target: str, mode: str = "domain") -> dict:
     # ─── DR だけはドメイン単位の指標 ───
     # DR は「ドメインの強さ」指標で URL 固有値ではないため、ユーザーが exact を
     # 選んでも domain モードでドメイン名から取得する (URL を渡すと値が取れない)。
-    # backlinks-stats / refdomains は逆に、ユーザーモードを尊重して
-    # Ahrefs Web UI と同じ集計範囲(完全一致なら exact)で値を返す。
     domain_target = _normalize_domain(target)
     domain_common = {"target": domain_target, "mode": "domain", "protocol": "both"}
+
+    # ─── backlinks / refdomains の取得モード調整 ───
+    # ユーザーが「部分一致 (prefix)」を選んでも、target がドメインルート
+    # (path が "/" or 空) の場合は実質ドメイン全体を見たい意図。Ahrefs API
+    # は prefix を厳密に解釈し target=https://example.com/ を「ルート1URL」
+    # に絞ってしまい backlinks-stats が metrics: null を返す。
+    # → ドメインルート + prefix の場合のみ自動で domain モードにフォールバック。
+    # サブパス (/blog/ 等) を渡された場合はユーザー意図通り prefix のままにする。
+    def _is_domain_root(t: str) -> bool:
+        try:
+            p = urlparse(t if t.startswith(("http://", "https://")) else "https://" + t)
+            path = (p.path or "/").rstrip("/")
+            return path == "" and not p.query and not p.fragment
+        except Exception:
+            return False
+
+    if mode == "prefix" and _is_domain_root(target):
+        bl_target, bl_mode = domain_target, "domain"
+    else:
+        bl_target, bl_mode = target, mode
+    bl_common = {"target": bl_target, "mode": bl_mode, "protocol": "both"}
 
     def _fetch_dr() -> Optional[dict]:
         resp = _api_get("site-explorer/domain-rating", {**domain_common, "date": today_iso})
@@ -324,8 +344,7 @@ def get_site_metrics(target: str, mode: str = "domain") -> dict:
         return resp
 
     def _fetch_backlinks() -> Optional[dict]:
-        # ユーザーモード尊重 (完全一致なら exact 集計、Ahrefs Web UI の数字と整合)
-        resp = _api_get("site-explorer/backlinks-stats", {**common, "date": today_iso})
+        resp = _api_get("site-explorer/backlinks-stats", {**bl_common, "date": today_iso})
         _record_raw("backlinks-stats", resp)
         return resp
 
@@ -334,8 +353,8 @@ def get_site_metrics(target: str, mode: str = "domain") -> dict:
         f_dr = executor.submit(_fetch_dr)
         f_traffic = executor.submit(_fetch_traffic)
         f_backlinks = executor.submit(_fetch_backlinks)
-        # dofollow refdomains もユーザーモードで取得 (Ahrefs Web UI と整合)
-        f_dofollow = executor.submit(_count_dofollow_refdomains, target, mode)
+        # dofollow refdomains は backlinks と同じ (target, mode) で取得
+        f_dofollow = executor.submit(_count_dofollow_refdomains, bl_target, bl_mode)
 
         dr_resp = f_dr.result()
         metrics_resp = f_traffic.result()
