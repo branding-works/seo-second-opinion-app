@@ -932,6 +932,31 @@ if mode == "サイト分析":
                     unsafe_allow_html=True,
                 )
 
+            # ─── Brand Radar (AI 引用) を 8カラム横一列で表示 ───
+            br = ahrefs.get("brand_radar", {})
+            br_platforms = br.get("platforms", {}) if isinstance(br, dict) else {}
+            br_total = br.get("total", 0) if isinstance(br, dict) else 0
+            if br_platforms:
+                # 順序: すべて → 7プラットフォーム
+                br_cards = [("すべて", br_total, "全プラットフォーム")]
+                for key in [
+                    "google_ai_overviews", "google_ai_mode", "chatgpt",
+                    "gemini", "perplexity", "copilot", "grok",
+                ]:
+                    p = br_platforms.get(key, {})
+                    if isinstance(p, dict):
+                        br_cards.append((p.get("label", key), p.get("responses", 0), "AI 引用"))
+                cols = st.columns(len(br_cards))
+                for col, (label, value, sub) in zip(cols, br_cards):
+                    with col:
+                        st.markdown(
+                            f'<div class="kpi-card"><div class="kpi-label">{label}</div><div class="kpi-value">{value:,}</div><div class="kpi-sub">{sub}</div></div>',
+                            unsafe_allow_html=True,
+                        )
+                st.caption(
+                    "AI 引用 (Ahrefs Brand Radar) — 自社ドメイン配下のURLが各 AI チャットボット応答内で引用された累計回数。URL一致モード適用。"
+                )
+
             st.markdown("")
             pages_display = metrics.get("organic_pages_count_display") or str(metrics.get("organic_pages_count", 0))
             st.info(f"**{pages_display}** ページが自然検索流入を獲得中 (Ahrefs 上位ページ)")
@@ -986,47 +1011,6 @@ if mode == "サイト分析":
                 st.markdown(dir_table)
             else:
                 st.caption("(データなし)")
-
-            # ─── Brand Radar (AI 引用) ───
-            st.markdown("#### AI 引用 (Ahrefs Brand Radar)")
-            br = ahrefs.get("brand_radar", {})
-            br_platforms = br.get("platforms", {}) if isinstance(br, dict) else {}
-            br_total = br.get("total", 0) if isinstance(br, dict) else 0
-            br_country = br.get("country", "") if isinstance(br, dict) else ""
-            br_fetched = br.get("fetched_at", "") if isinstance(br, dict) else ""
-            if br_platforms:
-                st.caption(
-                    f"出典: {br_fetched}  ·  地域: {br_country}  ·  自社ドメイン配下のURLが各 AI チャットボットの応答内で引用された累計回数 (URL一致モード適用)"
-                )
-                # KPI: 全プラットフォーム合計
-                st.markdown(
-                    f'<div class="kpi-card" style="max-width:280px;"><div class="kpi-label">すべてのプラットフォーム</div><div class="kpi-value">{br_total:,}</div><div class="kpi-sub">引用 (累計)</div></div>',
-                    unsafe_allow_html=True,
-                )
-                # 各プラットフォーム別テーブル
-                br_table = "| プラットフォーム | 引用回数 | ステータス |\n|---|---|---|\n"
-                # _BRAND_RADAR_PLATFORMS と同じ順で表示
-                ordered_keys = [
-                    "google_ai_overviews",
-                    "google_ai_mode",
-                    "chatgpt",
-                    "gemini",
-                    "perplexity",
-                    "copilot",
-                    "grok",
-                ]
-                for key in ordered_keys:
-                    p = br_platforms.get(key)
-                    if not isinstance(p, dict):
-                        continue
-                    label = p.get("label", key)
-                    n = p.get("responses", 0)
-                    status = p.get("status", "")
-                    status_md = "✓ 取得済" if status == "ok" else f"⚠ {status}"
-                    br_table += f"| {label} | {n:,} | {status_md} |\n"
-                st.markdown(br_table)
-            else:
-                st.caption("(Brand Radar データなし)")
 
     with tab3:
         contradictions = data.get("contradictions", [])
