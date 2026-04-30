@@ -932,13 +932,14 @@ if mode == "サイト分析":
                     unsafe_allow_html=True,
                 )
 
-            # ─── Brand Radar (AI 引用) を 8カラム横一列で表示 ───
+            # ─── AI露出 (Ahrefs Brand Radar) を 8カラム横一列で表示 ───
             br = ahrefs.get("brand_radar", {})
             br_platforms = br.get("platforms", {}) if isinstance(br, dict) else {}
             br_total = br.get("total", 0) if isinstance(br, dict) else 0
             if br_platforms:
-                # 順序: すべて → 7プラットフォーム
-                br_cards = [("すべて", br_total, "全プラットフォーム")]
+                st.markdown("#### AI露出")
+                # 順序: 合計 → 7プラットフォーム
+                br_cards = [("合計", br_total, "全プラットフォーム")]
                 for key in [
                     "google_ai_overviews", "google_ai_mode", "chatgpt",
                     "gemini", "perplexity", "copilot", "grok",
