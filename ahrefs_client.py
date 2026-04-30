@@ -612,19 +612,26 @@ def _build_brand_radar_where(target: str, mode: str) -> tuple[dict, str]:
 
 
 def _fetch_brand_radar_one_platform(
-    data_source: str, where_filter: dict, expected_prefix: str, country: str = "JP"
+    data_source: str, where_filter: dict, expected_prefix: str, country: str = ""
 ) -> Optional[int]:
     """1 platform 分の brand-radar-cited-pages を取得し、自社配下ページの
-    responses 合計を返す。API 失敗時 None。"""
+    responses 合計を返す。API 失敗時 None。
+
+    `country` は空文字なら送信しない (Brand Radar API はユーザー側 Web UI で
+    設定済みのレポート / プラン上の地域指定を尊重する。明示的に "JP" 等を
+    渡すと {"error":"bad country"} を返すケースがあるため、迷ったら空にする)。
+    """
+    params: dict[str, Any] = {
+        "data_source": data_source,
+        "select": "url,responses",
+        "where": json.dumps(where_filter),
+        "limit": 1000,
+    }
+    if country:
+        params["country"] = country
     resp = _api_get(
         "brand-radar/cited-pages",
-        {
-            "data_source": data_source,
-            "country": country,
-            "select": "url,responses",
-            "where": json.dumps(where_filter),
-            "limit": 1000,
-        },
+        params,
         timeout=60,
     )
     if not resp:
@@ -646,7 +653,7 @@ def _fetch_brand_radar_one_platform(
     return total
 
 
-def get_brand_radar_citations(target: str, mode: str = "domain", country: str = "JP") -> dict:
+def get_brand_radar_citations(target: str, mode: str = "domain", country: str = "") -> dict:
     """7 platforms の AI 引用回数を並列取得。
 
     Returns: {
@@ -656,8 +663,10 @@ def get_brand_radar_citations(target: str, mode: str = "domain", country: str = 
         },
         "total": 3700,                 # 全 platform の合計
         "fetched_at": "Ahrefs Brand Radar (live)",
-        "country": "JP",
+        "country": "",
     }
+    country は空なら API 呼び出しから除外する (Brand Radar は明示的な "JP" を
+    エラー扱いする場合があるため、デフォルトは空 = ユーザー Web UI 設定に従う)。
     エラーの platform は status="error" になり responses は 0。
     """
     if not has_ahrefs_token():
