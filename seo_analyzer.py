@@ -1072,7 +1072,7 @@ def _build_mock_structured(url: str) -> dict:
 
 def _mock_analyze_response(url: str) -> str:
     """ダミーの分析結果 (UI開発用)。"""
-    return f"""# SEO セカンドオピニオン: {url}
+    return f"""# バーチャル根谷さんアドバイス: {url}
 
 ## 総合スコア: 71/100
 

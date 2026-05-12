@@ -62,7 +62,7 @@ def render_admin_dashboard() -> None:
     col1, col2 = st.columns([4, 1])
     with col1:
         st.title("📊 管理者ダッシュボード")
-        st.caption("Branding Works SEO セカンドオピニオン — 利用ログ")
+        st.caption("Branding Works バーチャル根谷さんアドバイス — 利用ログ")
     with col2:
         if st.button("← 一般UIに戻る", use_container_width=True):
             st.session_state.show_admin_dashboard = False

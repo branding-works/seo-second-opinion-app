@@ -49,7 +49,7 @@ _init_db_once()
 
 # ─── ページ設定 ────────────────────────────────────────
 st.set_page_config(
-    page_title="SEO セカンドオピニオン",
+    page_title="バーチャル根谷さんアドバイス",
     page_icon="🌱",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -337,7 +337,7 @@ section[data-testid="stSidebar"][aria-expanded="false"] {
 st.markdown(
     """
 <div class="bw-header">
-    <span class="bw-header-title">SEO セカンドオピニオン</span>
+    <span class="bw-header-title">バーチャル根谷さんアドバイス</span>
     <a href="https://www.branding-works.jp/" target="_blank" rel="noopener">株式会社ブランディングワークス</a>
 </div>
 """,
@@ -1258,7 +1258,7 @@ elif mode == "施策レビュー":
 <div class="chat-msg">
     <div class="chat-avatar chat-avatar-ai">SO</div>
     <div>
-        <span class="chat-name">SEO セカンドオピニオン</span><span class="chat-time">{datetime.now().strftime('%Y-%m-%d %H:%M')}</span>
+        <span class="chat-name">バーチャル根谷さんアドバイス</span><span class="chat-time">{datetime.now().strftime('%Y-%m-%d %H:%M')}</span>
     </div>
 </div>
 """,
@@ -1328,7 +1328,7 @@ else:
 <div class="chat-msg">
     <div class="chat-avatar chat-avatar-ai">SO</div>
     <div>
-        <span class="chat-name">SEO セカンドオピニオン</span><span class="chat-time">{datetime.now().strftime('%Y-%m-%d %H:%M')}</span>
+        <span class="chat-name">バーチャル根谷さんアドバイス</span><span class="chat-time">{datetime.now().strftime('%Y-%m-%d %H:%M')}</span>
     </div>
 </div>
 """,
