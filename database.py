@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 import os
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 try:
@@ -28,6 +28,16 @@ SQLITE_PATH = os.getenv("SQLITE_PATH", os.path.join(tempfile.gettempdir(), "seo_
 
 def _is_postgres() -> bool:
     return bool(DATABASE_URL) and HAS_PSYCOPG
+
+
+def _sqlite_since_str(days: int) -> str:
+    """SQLite の日付フィルタ用しきい値文字列。
+
+    SQLite の CURRENT_TIMESTAMP は UTC の 'YYYY-MM-DD HH:MM:SS' 形式で保存される。
+    ローカル時刻の isoformat() ('YYYY-MM-DDTHH:MM:SS') と文字列比較すると、
+    日付部分が同じ日に区切り文字 (' ' < 'T') の比較で全行が除外されるため、
+    同じタイムゾーン (UTC)・同じ書式に揃えて比較する。"""
+    return (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _connect():
@@ -148,7 +158,7 @@ def list_analyses(
             return [dict(r) for r in rows]
         else:
             sql = "SELECT * FROM analyses WHERE created_at >= ?"
-            params = [since.isoformat()]
+            params = [_sqlite_since_str(days)]
             if mode_filter and mode_filter != "すべて":
                 sql += " AND mode = ?"
                 params.append(mode_filter)
@@ -214,19 +224,20 @@ def get_summary_stats(days: int = 30) -> dict:
             """, (since,))
             top = cur.fetchone()
         else:
+            since_str = _sqlite_since_str(days)
             cur.execute("""
                 SELECT COUNT(*) AS total,
                        COUNT(DISTINCT target_url) AS unique_urls,
                        AVG(total_score) AS avg_score
                 FROM analyses
                 WHERE created_at >= ?
-            """, (since.isoformat(),))
+            """, (since_str,))
             stats = dict(cur.fetchone())
             cur.execute("""
                 SELECT mode, COUNT(*) AS cnt FROM analyses
                 WHERE created_at >= ?
                 GROUP BY mode ORDER BY cnt DESC LIMIT 1
-            """, (since.isoformat(),))
+            """, (since_str,))
             top = cur.fetchone()
         stats["top_mode"] = dict(top)["mode"] if top else "—"
         stats["avg_score"] = round(float(stats["avg_score"] or 0), 1)
