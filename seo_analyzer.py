@@ -360,7 +360,7 @@ SUMMARY_TOOL = {
 
 
 # 5軸の (key, 表示名, total) — サマリースコア計算とエラー時のフォールバックで共有
-_AXIS_META = [
+AXIS_META = [
     {"key": "internal_seo", "name": "内部SEO・テクニカル", "total": 17, "needs_ahrefs": False},
     {"key": "external_seo", "name": "外部SEO・サイテーション", "total": 7, "needs_ahrefs": True},
     {"key": "content_seo", "name": "コンテンツSEO・記事", "total": 21, "needs_ahrefs": True},
@@ -409,11 +409,8 @@ def _build_empty_structured(url: str, ahrefs_data: dict, page_meta: dict, error:
         "summary": {
             "total_score": 0,
             "axes": [
-                {"key": "internal_seo", "name": "内部SEO・テクニカル", "score": 0, "issues": 0, "total": 17},
-                {"key": "external_seo", "name": "外部SEO・サイテーション", "score": 0, "issues": 0, "total": 7},
-                {"key": "content_seo", "name": "コンテンツSEO・記事", "score": 0, "issues": 0, "total": 21},
-                {"key": "eeat", "name": "EEAT・広報", "score": 0, "issues": 0, "total": 14},
-                {"key": "ai_exposure", "name": "AI露出 (LLMO・AI引用)", "score": 0, "issues": 0, "total": 8},
+                {"key": m["key"], "name": m["name"], "score": 0, "issues": 0, "total": m["total"]}
+                for m in AXIS_META
             ],
             "strengths": "",
             "concerns": "",
@@ -421,11 +418,8 @@ def _build_empty_structured(url: str, ahrefs_data: dict, page_meta: dict, error:
         },
         "url_meta": page_meta,
         "axes": {
-            "internal_seo": {"issues": [], "passed": [], "unverifiable": []},
-            "external_seo": {"issues": [], "passed": [], "unverifiable": []},
-            "content_seo": {"issues": [], "passed": [], "unverifiable": []},
-            "eeat": {"issues": [], "passed": [], "unverifiable": []},
-            "ai_exposure": {"issues": [], "passed": [], "unverifiable": []},
+            m["key"]: {"issues": [], "passed": [], "unverifiable": []}
+            for m in AXIS_META
         },
         "ahrefs": empty_ahrefs,
         "contradictions": [],
@@ -585,7 +579,7 @@ def analyze_site_structured(
     # Step 2: page_meta だけで判定可能な軸 (Ahrefs不要) を先行起動
     llm_pool = ThreadPoolExecutor(max_workers=6)
     axis_futures: dict = {}
-    for meta in _AXIS_META:
+    for meta in AXIS_META:
         if not meta["needs_ahrefs"]:
             axis_futures[meta["key"]] = llm_pool.submit(
                 _call_axis, client, url, meta["key"], meta["name"], meta["total"], page_meta, None
@@ -595,7 +589,7 @@ def analyze_site_structured(
     ahrefs_data = f_ahrefs.result()
     fetcher_pool.shutdown(wait=False)
 
-    for meta in _AXIS_META:
+    for meta in AXIS_META:
         if meta["needs_ahrefs"]:
             axis_futures[meta["key"]] = llm_pool.submit(
                 _call_axis, client, url, meta["key"], meta["name"], meta["total"], page_meta, ahrefs_data
@@ -605,7 +599,7 @@ def analyze_site_structured(
     # Step 4: 全 call の結果を取得 (各 call は独立に失敗しうる)
     axes_result: dict = {}
     axis_errors: list = []
-    for meta in _AXIS_META:
+    for meta in AXIS_META:
         future = axis_futures[meta["key"]]
         try:
             data = future.result(timeout=240)
@@ -631,7 +625,7 @@ def analyze_site_structured(
 
     summary_axes = []
     total_score = 0
-    for meta in _AXIS_META:
+    for meta in AXIS_META:
         issues_n = len(axes_result[meta["key"]].get("issues", []))
         score = round(((meta["total"] - issues_n) / meta["total"]) * 20) if meta["total"] > 0 else 0
         score = max(0, min(20, score))

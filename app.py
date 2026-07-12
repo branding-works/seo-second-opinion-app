@@ -21,6 +21,7 @@ import streamlit as st
 import plotly.graph_objects as go
 
 from seo_analyzer import (
+    AXIS_META,
     analyze_site_structured,
     review_strategy,
     answer_question,
@@ -751,15 +752,9 @@ if mode == "サイト分析":
 
     # axes (data 直下) が無い・不完全な場合の防御
     if "axes" not in data or not isinstance(data.get("axes"), dict):
-        data["axes"] = {
-            "internal_seo": {"issues": [], "passed": []},
-            "external_seo": {"issues": [], "passed": []},
-            "content_seo": {"issues": [], "passed": []},
-            "eeat": {"issues": [], "passed": []},
-            "ai_exposure": {"issues": [], "passed": []},
-        }
+        data["axes"] = {m["key"]: {"issues": [], "passed": []} for m in AXIS_META}
     # 各軸の中身が dict でない場合も補正
-    for k in ["internal_seo", "external_seo", "content_seo", "eeat", "ai_exposure"]:
+    for k in [m["key"] for m in AXIS_META]:
         if not isinstance(data["axes"].get(k), dict):
             data["axes"][k] = {"issues": [], "passed": []}
         data["axes"][k].setdefault("issues", [])
@@ -768,11 +763,8 @@ if mode == "サイト分析":
     # summary.axes が list でない場合の防御
     if "axes" not in summary or not isinstance(summary.get("axes"), list):
         summary["axes"] = [
-            {"key": "internal_seo", "name": "内部SEO・テクニカル", "score": 0, "issues": 0, "total": 17},
-            {"key": "external_seo", "name": "外部SEO・サイテーション", "score": 0, "issues": 0, "total": 7},
-            {"key": "content_seo", "name": "コンテンツSEO・記事", "score": 0, "issues": 0, "total": 21},
-            {"key": "eeat", "name": "EEAT・広報", "score": 0, "issues": 0, "total": 14},
-            {"key": "ai_exposure", "name": "AI露出 (LLMO・AI引用)", "score": 0, "issues": 0, "total": 8},
+            {"key": m["key"], "name": m["name"], "score": 0, "issues": 0, "total": m["total"]}
+            for m in AXIS_META
         ]
     scores_dict = _scores_dict_from_data(data)
     total_score = summary.get("total_score", 0) if isinstance(summary, dict) else 0
