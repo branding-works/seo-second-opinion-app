@@ -11,9 +11,14 @@ import time
 import threading
 from datetime import datetime
 
+from dotenv import load_dotenv
+
+# .env はローカルモジュール import より前に読み込む。
+# database.py / admin_ui.py が import 時にモジュールレベルで環境変数を読むため。
+load_dotenv()
+
 import streamlit as st
 import plotly.graph_objects as go
-from dotenv import load_dotenv
 
 from seo_analyzer import (
     analyze_site_structured,
@@ -29,9 +34,6 @@ from admin_ui import (
     render_admin_dashboard,
 )
 import csv_export
-
-# .env 読み込み
-load_dotenv()
 
 
 # DB 初期化 (プロセスにつき1回だけ。Streamlit再実行のたびに Neon 接続するのを防ぐ)
