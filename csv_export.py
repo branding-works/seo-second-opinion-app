@@ -145,12 +145,10 @@ def url_meta_csv(url_meta: dict, target_url: str = "") -> bytes:
     rows = [
         {"項目": "対象URL", "値": target_url},
         {"項目": "Title", "値": url_meta.get("title", "")},
-        {"項目": "Meta-description", "値": url_meta.get("description", "")},
-        {"項目": "インデックス状態", "値": url_meta.get("indexable_summary", "")},
+        {"項目": "Meta-description", "値": url_meta.get("meta_description", "")},
+        {"項目": "インデックス状態", "値": url_meta.get("index_status", "")},
         {"項目": "canonical", "値": url_meta.get("canonical", "")},
-        {"項目": "viewport", "値": url_meta.get("viewport", "")},
-        {"項目": "h1", "値": url_meta.get("h1", "")},
-        {"項目": "構造化データ (種類)", "値": ", ".join(url_meta.get("schema_types", []) or [])},
+        {"項目": "構造化データ (種類)", "値": ", ".join(url_meta.get("structured_data", []) or [])},
     ]
     return _to_csv_bytes(rows, ["項目", "値"])
 

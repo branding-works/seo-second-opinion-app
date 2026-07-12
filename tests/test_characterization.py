@@ -75,9 +75,8 @@ def _csv_rows(b: bytes) -> list[list[str]]:
     return list(_csv.reader(io.StringIO(b.decode("utf-8-sig"))))
 
 
-def test_url_meta_csv_keys_current_behavior():
-    """現状バグの固定: url_meta_csv のキー名が実データと不一致で値が空になる。
-    R5 修正時にこのテストの期待値を「値が入る」側に書き換えること。"""
+def test_url_meta_csv_keys():
+    """R5 で修正済み: 実データのキー名で値が入る。"""
     import csv_export
     page_meta = {
         "title": "T", "meta_description": "D", "canonical": "self",
@@ -88,10 +87,10 @@ def test_url_meta_csv_keys_current_behavior():
     d = {r[0]: r[1] for r in rows[1:]}
     assert d["対象URL"] == "https://x.jp/"
     assert d["Title"] == "T"
-    # ↓ 現状はキー名不一致で常に空(バグ)
-    assert d["Meta-description"] == ""
-    assert d["インデックス状態"] == ""
-    assert d["構造化データ (種類)"] == ""
+    assert d["Meta-description"] == "D"
+    assert d["インデックス状態"] == "登録済み"
+    assert d["構造化データ (種類)"] == "Article, FAQPage"
+    assert "viewport" not in d and "h1" not in d
 
 
 # ─── seo_analyzer: mock 構造とスコア骨格 ────────────────
