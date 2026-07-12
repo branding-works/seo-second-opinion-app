@@ -130,6 +130,18 @@ def test_normalize_axis():
     assert out["unverifiable"] == []
 
 
+def test_extract_scores_for_log():
+    from seo_analyzer import extract_scores_for_log, _build_mock_structured
+    data = _build_mock_structured("https://example.co.jp/")
+    axis_scores, total = extract_scores_for_log(data)
+    assert total == 71
+    assert len(axis_scores) == 5
+    assert axis_scores["内部SEO・テクニカル"] == 16
+    # 壊れたデータには ({}, None) を返す
+    assert extract_scores_for_log({"summary": "broken"}) == ({}, None)
+    assert extract_scores_for_log(None) == ({}, None)
+
+
 # ─── csv_export: ZIP 一括出力 ──────────────────────────
 
 def test_build_full_zip_contains_11_csv():

@@ -369,6 +369,27 @@ _AXIS_META = [
 ]
 
 
+def extract_scores_for_log(data) -> tuple[dict, Optional[int]]:
+    """分析結果 dict から DB ログ用の (axis_scores, total_score) を取り出す。
+
+    axis_scores は {軸名: score} の dict。summary が壊れている場合は ({}, None)。
+    """
+    if not isinstance(data, dict):
+        return {}, None
+    summary = data.get("summary")
+    if not isinstance(summary, dict):
+        return {}, None
+    axes = summary.get("axes")
+    if not isinstance(axes, list):
+        return {}, None
+    axis_scores = {
+        a.get("name", "?"): a.get("score", 0)
+        for a in axes if isinstance(a, dict)
+    }
+    total = summary.get("total_score")
+    return axis_scores, total if isinstance(total, int) else None
+
+
 def _build_empty_structured(url: str, ahrefs_data: dict, page_meta: dict, error: str = "") -> dict:
     """LLM 失敗時に返す空のスケルトン (スコア 0、空配列)。
 

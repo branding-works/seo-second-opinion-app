@@ -25,6 +25,7 @@ from seo_analyzer import (
     review_strategy,
     answer_question,
     is_mock_mode,
+    extract_scores_for_log,
     _build_mock_structured,
 )
 
@@ -698,11 +699,7 @@ if mode == "サイト分析":
 
         # ─── 分析ログをDBに保存 ───
         try:
-            axis_scores = {}
-            total_score = None
-            if isinstance(new_data.get("axes"), list):
-                axis_scores = {a.get("name", "?"): a.get("score", 0) for a in new_data["axes"]}
-                total_score = sum(int(v) for v in axis_scores.values() if isinstance(v, (int, float)))
+            axis_scores, total_score = extract_scores_for_log(new_data)
             db.save_analysis(
                 mode="サイト分析",
                 target_url=url,
