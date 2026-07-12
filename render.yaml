@@ -9,6 +9,8 @@ services:
     # 通常の pip。Starter プランの永続キャッシュ + requirements の == ピン止めで2回目以降は十分高速
     buildCommand: pip install -r requirements.txt
     startCommand: streamlit run app.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true --browser.gatherUsageStats=false
+    # 新インスタンスがこのパスに 200 を返すまで旧インスタンスを生かしておく (デプロイ/再起動時の 502 防止)
+    healthCheckPath: /_stcore/health
     envVars:
       - key: PYTHON_VERSION
         value: 3.12
