@@ -656,7 +656,7 @@ def run_analysis_with_progress(url: str, url_match: str) -> None:
     # 実際の処理境界とは厳密には一致しないが、ユーザーに「今何をしているか」を伝える
     STAGES = [
         (15, "🔍 Ahrefs サイトデータ取得中..."),
-        (90, "🧠 AI による多軸スコアリング中 (Sonnet 4.6)..."),
+        (90, "🧠 AI による多軸スコアリング中..."),
     ]
 
     progress_bar = st.progress(0, text=f"調査分析中  想定 {ESTIMATED_SECONDS}秒")
@@ -1266,7 +1266,7 @@ elif mode == "施策レビュー":
                 time.sleep(0.3)
                 st.write("🔍 各案を特許・公式情報・QRG・リーク資料に照らして評価中...")
                 time.sleep(0.5)
-                st.write("🤖 Anthropic Opus 4.7 にリクエスト中...")
+                st.write("🤖 Claude にリクエスト中...")
                 if is_mock_mode():
                     time.sleep(0.7)
                     result = review_strategy(review_input, related)
@@ -1323,7 +1323,7 @@ else:
                 time.sleep(0.3)
                 st.write("📚 一次資料 (特許・公式・QRG・リーク・訴訟・VRP) を参照中...")
                 time.sleep(0.4)
-                st.write("🤖 Anthropic Opus 4.7 にリクエスト中...")
+                st.write("🤖 Claude にリクエスト中...")
                 if is_mock_mode():
                     time.sleep(0.7)
                     result = answer_question(q_input)
