@@ -943,7 +943,7 @@ if mode == "サイト分析":
                 )
             except Exception as _e:
                 st.caption(f"(ZIP 生成エラー: {_e})")
-            st.caption(f"出典: Ahrefs Site Explorer / 2026-04-27時点 ({fetched_at})")
+            st.caption(f"出典: Ahrefs Site Explorer / {datetime.now().strftime('%Y-%m-%d')}時点 ({fetched_at})")
             # API ステータス警告
             if api_status and api_status != "live":
                 with st.expander(f"⚠ Ahrefs API ステータス: {api_status}", expanded=False):
