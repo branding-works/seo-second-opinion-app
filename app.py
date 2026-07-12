@@ -522,6 +522,29 @@ def render_score_bars(scores: dict):
     st.markdown(rows_html, unsafe_allow_html=True)
 
 
+def render_ai_chat_header() -> None:
+    """AI 応答チャットの発言者ヘッダー(Mode B / C 共通)。"""
+    st.markdown(
+        f"""
+<div class="chat-msg">
+    <div class="chat-avatar chat-avatar-ai">SO</div>
+    <div>
+        <span class="chat-name">バーチャル根谷さんアドバイス</span><span class="chat-time">{datetime.now().strftime('%Y-%m-%d %H:%M')}</span>
+    </div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+
+def save_log_silently(**kwargs) -> None:
+    """分析ログの DB 保存。失敗してもユーザー体験を止めない(既存仕様)。"""
+    try:
+        db.save_analysis(**kwargs)
+    except Exception:
+        pass
+
+
 # ─── Mode A: サイト分析 (データドリブン) ───────────────────
 
 
@@ -699,19 +722,16 @@ if mode == "サイト分析":
         st.session_state.analysis_data = new_data
 
         # ─── 分析ログをDBに保存 ───
-        try:
-            axis_scores, total_score = extract_scores_for_log(new_data)
-            db.save_analysis(
-                mode="サイト分析",
-                target_url=url,
-                url_match_mode=url_match,
-                query_text=None,
-                total_score=total_score,
-                axis_scores=axis_scores,
-                full_result=new_data,
-            )
-        except Exception:
-            pass
+        axis_scores, total_score = extract_scores_for_log(new_data)
+        save_log_silently(
+            mode="サイト分析",
+            target_url=url,
+            url_match_mode=url_match,
+            query_text=None,
+            total_score=total_score,
+            axis_scores=axis_scores,
+            full_result=new_data,
+        )
 
         if new_data.get("error"):
             status_box.error(
@@ -1222,29 +1242,16 @@ elif mode == "施策レビュー":
                     st.write("✏️  結果を整形中...")
                     time.sleep(0.2)
                     status.update(label="✓ 評価完了", state="complete", expanded=False)
-            try:
-                db.save_analysis(
-                    mode="施策レビュー",
-                    target_url=related or None,
-                    url_match_mode=None,
-                    query_text=review_input,
-                    total_score=None,
-                    axis_scores=None,
-                    full_result={"answer_markdown": result, "input": review_input, "related_url": related},
-                )
-            except Exception:
-                pass
-            st.markdown(
-                f"""
-<div class="chat-msg">
-    <div class="chat-avatar chat-avatar-ai">SO</div>
-    <div>
-        <span class="chat-name">バーチャル根谷さんアドバイス</span><span class="chat-time">{datetime.now().strftime('%Y-%m-%d %H:%M')}</span>
-    </div>
-</div>
-""",
-                unsafe_allow_html=True,
+            save_log_silently(
+                mode="施策レビュー",
+                target_url=related or None,
+                url_match_mode=None,
+                query_text=review_input,
+                total_score=None,
+                axis_scores=None,
+                full_result={"answer_markdown": result, "input": review_input, "related_url": related},
             )
+            render_ai_chat_header()
             st.markdown(result)
 
 
@@ -1292,27 +1299,14 @@ else:
                     st.write("✏️  結果を整形中...")
                     time.sleep(0.2)
                     status.update(label="✓ 回答完了", state="complete", expanded=False)
-            try:
-                db.save_analysis(
-                    mode="個別質問",
-                    target_url=None,
-                    url_match_mode=None,
-                    query_text=q_input,
-                    total_score=None,
-                    axis_scores=None,
-                    full_result={"answer_markdown": result, "question": q_input},
-                )
-            except Exception:
-                pass
-            st.markdown(
-                f"""
-<div class="chat-msg">
-    <div class="chat-avatar chat-avatar-ai">SO</div>
-    <div>
-        <span class="chat-name">バーチャル根谷さんアドバイス</span><span class="chat-time">{datetime.now().strftime('%Y-%m-%d %H:%M')}</span>
-    </div>
-</div>
-""",
-                unsafe_allow_html=True,
+            save_log_silently(
+                mode="個別質問",
+                target_url=None,
+                url_match_mode=None,
+                query_text=q_input,
+                total_score=None,
+                axis_scores=None,
+                full_result={"answer_markdown": result, "question": q_input},
             )
+            render_ai_chat_header()
             st.markdown(result)
