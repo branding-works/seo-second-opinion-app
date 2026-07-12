@@ -439,16 +439,6 @@ if is_mock_mode():
     )
 
 
-# ─── 共通: スコア配分(モックデータ) ──────────────────
-DEFAULT_SCORES = {
-    "内部SEO・テクニカル": (16, 17, 3),
-    "外部SEO・サイテーション": (14, 7, 2),
-    "コンテンツSEO・記事": (15, 21, 5),
-    "EEAT・広報": (11, 14, 6),
-    "AI露出 (LLMO・AI引用)": (15, 8, 2),
-}
-
-
 def render_radar_chart(scores: dict) -> go.Figure:
     """5軸レーダーチャート (Plotly)。LLM の表記揺れに耐性あり。"""
     short_names_map = {
