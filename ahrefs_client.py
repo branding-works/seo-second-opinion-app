@@ -14,7 +14,7 @@ import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional, Any
 from urllib.parse import urlparse
 
@@ -295,7 +295,7 @@ def get_site_metrics(target: str, mode: str = "domain") -> dict:
         result["api_status"] = "AHREFS_API_TOKEN 未設定 (Render環境変数を確認)"
         return result
 
-    today_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today_iso = datetime.utcnow().strftime("%Y-%m-%d")
     common = {"target": target, "mode": mode, "protocol": "both"}
 
     # ─── DR だけはドメイン単位の指標 ───
@@ -415,7 +415,7 @@ def get_top_keywords(target: str, mode: str = "domain", limit: int = 10) -> list
     if not has_ahrefs_token():
         return _mock_top_keywords()
 
-    today_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today_iso = datetime.utcnow().strftime("%Y-%m-%d")
     # 複数フィールド名を順次試す (Ahrefs API v3 の正しい組み合わせを探す)
     field_attempts = [
         ("keyword,volume,best_position,sum_traffic,best_position_url", "sum_traffic:desc"),
@@ -481,7 +481,7 @@ def get_top_pages(target: str, mode: str = "domain", limit: int = 10) -> list[di
     if not has_ahrefs_token():
         return _mock_top_pages()
 
-    today_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today_iso = datetime.utcnow().strftime("%Y-%m-%d")
     resp = _api_get(
         "site-explorer/top-pages",
         {
@@ -526,7 +526,7 @@ def get_top_directories(target: str, mode: str = "domain", limit: int = 10) -> l
     if not has_ahrefs_token():
         return _mock_top_directories()
 
-    today_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today_iso = datetime.utcnow().strftime("%Y-%m-%d")
     # 大量取得してディレクトリ単位に集計
     resp = _api_get(
         "site-explorer/top-pages",
