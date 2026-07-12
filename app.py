@@ -647,115 +647,109 @@ def _render_axis_content(axis_data: dict, axis_key: str = "", axis_name: str = "
             )
 
 
-if mode == "サイト分析":
+def run_analysis_with_progress(url: str, url_match: str) -> None:
+    """分析を別スレッドで実行し、進捗バー表示・結果の保存・ログ記録まで行う。"""
+    st.markdown("---")
+    # 想定総時間 (秒)。Ahrefs API 並列化 + Sonnet + max_tokens 削減後の見込み。
+    ESTIMATED_SECONDS = 90
+    # 想定処理ステージ (累積秒数, ラベル)。プログレスバーの体感UX用。
+    # 実際の処理境界とは厳密には一致しないが、ユーザーに「今何をしているか」を伝える
+    STAGES = [
+        (15, "🔍 Ahrefs サイトデータ取得中..."),
+        (90, "🧠 AI による多軸スコアリング中 (Sonnet 4.6)..."),
+    ]
 
-    # ─── 実行ボタン押下時: データ更新 ───
-    if run_btn:
-        st.markdown("---")
-        # 想定総時間 (秒)。Ahrefs API 並列化 + Sonnet + max_tokens 削減後の見込み。
-        ESTIMATED_SECONDS = 90
-        # 想定処理ステージ (累積秒数, ラベル)。プログレスバーの体感UX用。
-        # 実際の処理境界とは厳密には一致しないが、ユーザーに「今何をしているか」を伝える
-        STAGES = [
-            (15, "🔍 Ahrefs サイトデータ取得中..."),
-            (90, "🧠 AI による多軸スコアリング中 (Sonnet 4.6)..."),
-        ]
+    progress_bar = st.progress(0, text=f"調査分析中  想定 {ESTIMATED_SECONDS}秒")
+    status_box = st.empty()
 
-        progress_bar = st.progress(0, text=f"調査分析中  想定 {ESTIMATED_SECONDS}秒")
-        status_box = st.empty()
+    # 別スレッドで分析実行 → メインで進捗バー更新
+    result_holder: dict = {}
 
-        # 別スレッドで分析実行 → メインで進捗バー更新
-        result_holder: dict = {}
+    def _worker():
+        try:
+            if is_mock_mode():
+                # mock も実時間で 3-5 秒程度かけて終わる
+                time.sleep(3.0)
+                result_holder["data"] = _build_mock_structured(url)
+            else:
+                result_holder["data"] = analyze_site_structured(url, url_match)
+        except Exception as e:
+            result_holder["error"] = str(e)
+            result_holder["data"] = None
 
-        def _worker():
-            try:
-                if is_mock_mode():
-                    # mock も実時間で 3-5 秒程度かけて終わる
-                    time.sleep(3.0)
-                    result_holder["data"] = _build_mock_structured(url)
-                else:
-                    result_holder["data"] = analyze_site_structured(url, url_match)
-            except Exception as e:
-                result_holder["error"] = str(e)
-                result_holder["data"] = None
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
 
-        thread = threading.Thread(target=_worker, daemon=True)
-        thread.start()
-
-        # 進捗バーを 1秒ごと更新 (ESTIMATED_SECONDS で 100% に到達)
-        start = time.time()
-        while thread.is_alive():
-            elapsed = time.time() - start
-            pct = min(99, int(elapsed / ESTIMATED_SECONDS * 100))
-            remaining = max(0, ESTIMATED_SECONDS - int(elapsed))
-            # 経過時間に応じてステージラベルを切り替え
-            stage_label = STAGES[-1][1]
-            for boundary, label in STAGES:
-                if elapsed <= boundary:
-                    stage_label = label
-                    break
-            progress_bar.progress(
-                pct,
-                text=f"{stage_label}  ·  残り約 {remaining}秒",
-            )
-            time.sleep(1.0)
-
-        thread.join(timeout=2)
-
-        # 分析が早く終わった場合も含め、完了で 100% にジャンプ
-        progress_bar.progress(100, text="✓ 完了")
-        time.sleep(0.3)
-        progress_bar.empty()
-
-        new_data = result_holder.get("data")
-        if new_data is None:
-            new_data = _build_mock_structured(url)
-            new_data["error"] = result_holder.get("error", "分析処理が中断されました")
-            new_data["ahrefs"] = {
-                "metrics": {},
-                "top_keywords": [],
-                "top_pages": [],
-                "top_directories": [],
-                "domain": "",
-            }
-
-        st.session_state.analysis_data = new_data
-
-        # ─── 分析ログをDBに保存 ───
-        axis_scores, total_score = extract_scores_for_log(new_data)
-        save_log_silently(
-            mode="サイト分析",
-            target_url=url,
-            url_match_mode=url_match,
-            query_text=None,
-            total_score=total_score,
-            axis_scores=axis_scores,
-            full_result=new_data,
+    # 進捗バーを 1秒ごと更新 (ESTIMATED_SECONDS で 100% に到達)
+    start = time.time()
+    while thread.is_alive():
+        elapsed = time.time() - start
+        pct = min(99, int(elapsed / ESTIMATED_SECONDS * 100))
+        remaining = max(0, ESTIMATED_SECONDS - int(elapsed))
+        # 経過時間に応じてステージラベルを切り替え
+        stage_label = STAGES[-1][1]
+        for boundary, label in STAGES:
+            if elapsed <= boundary:
+                stage_label = label
+                break
+        progress_bar.progress(
+            pct,
+            text=f"{stage_label}  ·  残り約 {remaining}秒",
         )
+        time.sleep(1.0)
 
-        if new_data.get("error"):
-            status_box.error(
-                f"⚠️ 分析が完了できませんでした: {new_data['error']}\n\n"
-                "スコア・指摘事項は空欄表示になります。再度「分析を実行」を試してください。"
-            )
-        elif is_mock_mode():
-            status_box.info("✓ 分析完了 (mockモード)")
-        else:
-            status_box.success("✓ 分析完了")
-            # 軽微な警告 (型不一致による自動補正など) を表示
-            warnings = new_data.get("_warnings", [])
-            if warnings:
-                with st.expander("⚠ 軽微な警告 (自動補正済み)", expanded=False):
-                    for w in warnings:
-                        st.caption(f"• {w}")
+    thread.join(timeout=2)
 
-    # ─── データ取得 (session_state にあれば使用、無ければ mock) ───
-    data = st.session_state.get("analysis_data")
-    is_example_data = data is None or not isinstance(data, dict) or "summary" not in data
-    if is_example_data:
-        data = _build_mock_structured(url)
-        st.info("【例】これはサンプル表示です。実際の分析結果を表示するには、左の「分析を実行」ボタンを押してください。")
+    # 分析が早く終わった場合も含め、完了で 100% にジャンプ
+    progress_bar.progress(100, text="✓ 完了")
+    time.sleep(0.3)
+    progress_bar.empty()
 
+    new_data = result_holder.get("data")
+    if new_data is None:
+        new_data = _build_mock_structured(url)
+        new_data["error"] = result_holder.get("error", "分析処理が中断されました")
+        new_data["ahrefs"] = {
+            "metrics": {},
+            "top_keywords": [],
+            "top_pages": [],
+            "top_directories": [],
+            "domain": "",
+        }
+
+    st.session_state.analysis_data = new_data
+
+    # ─── 分析ログをDBに保存 ───
+    axis_scores, total_score = extract_scores_for_log(new_data)
+    save_log_silently(
+        mode="サイト分析",
+        target_url=url,
+        url_match_mode=url_match,
+        query_text=None,
+        total_score=total_score,
+        axis_scores=axis_scores,
+        full_result=new_data,
+    )
+
+    if new_data.get("error"):
+        status_box.error(
+            f"⚠️ 分析が完了できませんでした: {new_data['error']}\n\n"
+            "スコア・指摘事項は空欄表示になります。再度「分析を実行」を試してください。"
+        )
+    elif is_mock_mode():
+        status_box.info("✓ 分析完了 (mockモード)")
+    else:
+        status_box.success("✓ 分析完了")
+        # 軽微な警告 (型不一致による自動補正など) を表示
+        warnings = new_data.get("_warnings", [])
+        if warnings:
+            with st.expander("⚠ 軽微な警告 (自動補正済み)", expanded=False):
+                for w in warnings:
+                    st.caption(f"• {w}")
+
+
+def normalize_analysis_data(data: dict) -> dict:
+    """分析結果 dict の欠損・型崩れを防御的に補正する (LLM がスキーマを無視するケース対応)。"""
     # summary が dict でない場合の防御 (LLMが文字列で返すケース)
     raw_summary = data.get("summary", {})
     if not isinstance(raw_summary, dict):
@@ -767,8 +761,6 @@ if mode == "サイト分析":
             "priority_action": "",
         }
     summary = data["summary"]
-    url_meta = data.get("url_meta", {}) if isinstance(data.get("url_meta"), dict) else {}
-    target_url = data.get("target_url", url) or url
 
     # axes (data 直下) が無い・不完全な場合の防御
     if "axes" not in data or not isinstance(data.get("axes"), dict):
@@ -786,6 +778,11 @@ if mode == "サイト分析":
             {"key": m["key"], "name": m["name"], "score": 0, "issues": 0, "total": m["total"]}
             for m in AXIS_META
         ]
+    return data
+
+
+def render_score_header(data: dict, summary: dict, url_meta: dict, target_url: str) -> None:
+    """総合スコア + レーダーチャート + 調査URLメタ情報の上段を描画。"""
     scores_dict = _scores_dict_from_data(data)
     total_score = summary.get("total_score", 0) if isinstance(summary, dict) else 0
 
@@ -837,7 +834,9 @@ if mode == "サイト分析":
             unsafe_allow_html=False,
         )
 
-    # ─── サマリー ───
+
+def render_summary_section(summary: dict) -> None:
+    """強み / 懸念 / 施策案の 3 カラムサマリーを描画。"""
     st.markdown("### サマリー")
     sum_col1, sum_col2, sum_col3 = st.columns(3)
     with sum_col1:
@@ -850,344 +849,379 @@ if mode == "サイト分析":
         st.markdown("**施策案**")
         st.markdown(summary.get("priority_action", ""))
 
+
+def render_tab_issues(data: dict, summary: dict) -> None:
+    """TAB 課題サマリ: DL ボタン行 + 5軸タブ + 要検討施策 (donts) を描画。"""
+    # ダウンロード行 (5軸スコア + 全軸まとめ + 全データ ZIP)
+    _domain_for_dl = (data.get("ahrefs", {}) or {}).get("domain", "") if isinstance(data, dict) else ""
+    dlc1, dlc2, dlc3 = st.columns([1, 1, 1])
+    with dlc1:
+        st.download_button(
+            label="📥 5軸スコア CSV",
+            data=csv_export.axis_scores_csv(summary),
+            file_name=csv_export.make_filename(_domain_for_dl, "axis_scores"),
+            mime="text/csv",
+            key="dl_axis_scores",
+        )
+    with dlc2:
+        st.download_button(
+            label="📥 全軸まとめ CSV",
+            data=csv_export.all_axes_combined_csv(data.get("axes", {}), summary.get("axes", []) if isinstance(summary, dict) else []),
+            file_name=csv_export.make_filename(_domain_for_dl, "axes_combined"),
+            mime="text/csv",
+            help="5軸の issues / passed / unverifiable を1ファイルにまとめてダウンロード",
+            key="dl_axes_combined",
+        )
+    with dlc3:
+        try:
+            st.download_button(
+                label="📦 全データ ZIP",
+                data=csv_export.build_full_zip(data),
+                file_name=csv_export.make_filename(_domain_for_dl, "all_data").replace(".csv", ".zip"),
+                mime="application/zip",
+                key="dl_zip_all_tab1",
+            )
+        except Exception:
+            pass
+
+    st.markdown("**課題可能性** _(発見数 / 全チェック項目数)_")
+
+    axes_meta = summary["axes"]
+    axis_keys = [a["key"] for a in axes_meta]
+    axis_names = {a["key"]: a["name"] for a in axes_meta}
+    axis_labels = [
+        f"{a['name']} {a['issues']}/{a['total']}" for a in axes_meta
+    ]
+    axis_tabs = st.tabs(axis_labels)
+
+    for tab_obj, axis_key in zip(axis_tabs, axis_keys):
+        with tab_obj:
+            _render_axis_content(
+                data["axes"].get(axis_key, {"issues": [], "passed": [], "unverifiable": []}),
+                axis_key=axis_key,
+                axis_name=axis_names.get(axis_key, ""),
+                domain=_domain_for_dl,
+            )
+
+    st.divider()
+    st.markdown("### 実施にあたって要検討施策")
+    donts = data.get("donts", [])
+    if donts:
+        donts_lines = []
+        for d in donts:
+            if not isinstance(d, dict):
+                donts_lines.append(f"- {d}")
+                continue
+            donts_lines.append(
+                f"- **{d.get('name','')}** — {d.get('reason','')} [{d.get('evidence_label','')}]({d.get('evidence_url','#')})"
+            )
+        st.warning("\n".join(donts_lines))
+        st.download_button(
+            label="📥 要検討施策 (donts) CSV",
+            data=csv_export.donts_csv(donts),
+            file_name=csv_export.make_filename(_domain_for_dl, "donts"),
+            mime="text/csv",
+            key="dl_donts",
+        )
+
+
+def render_tab_sitedata(data: dict) -> None:
+    """TAB サイトデータ: Ahrefs KPI + AI露出 + KW / URL / ディレクトリ表を描画。"""
+    st.markdown("#### Ahrefs サイト指標")
+    ahrefs = data.get("ahrefs", {})
+    metrics = ahrefs.get("metrics", {})
+    fetched_at = metrics.get("fetched_at", "")
+    api_status = metrics.get("api_status", "")
+    api_errors = metrics.get("api_errors", [])
+    ahrefs_empty = bool(data.get("error")) or not metrics
+    ahrefs_domain = ahrefs.get("domain", "") if isinstance(ahrefs, dict) else ""
+
+    if ahrefs_empty:
+        st.info("(分析データなし — 分析が完了するとここに Ahrefs サイト指標が表示されます)")
+    else:
+        # 全データ ZIP 一括ダウンロード (タブ上部)
+        try:
+            _zip_bytes = csv_export.build_full_zip(data)
+            _zip_name = csv_export.make_filename(ahrefs_domain, "all_data").replace(".csv", ".zip")
+            st.download_button(
+                label="📦 全データ ZIP ダウンロード",
+                data=_zip_bytes,
+                file_name=_zip_name,
+                mime="application/zip",
+                key="dl_zip_all",
+                help="画面表示中の全データ (KPI / KW / URL / ディレクトリ / AI露出 / 各軸 issues・passed・unverifiable / 出典 など) を 1つの ZIP にまとめてダウンロード",
+            )
+        except Exception as _e:
+            st.caption(f"(ZIP 生成エラー: {_e})")
+        st.caption(f"出典: Ahrefs Site Explorer / {datetime.now().strftime('%Y-%m-%d')}時点 ({fetched_at})")
+        # API ステータス警告
+        if api_status and api_status != "live":
+            with st.expander(f"⚠ Ahrefs API ステータス: {api_status}", expanded=False):
+                if api_errors:
+                    st.markdown("**API エラー詳細:** (右上のコピーアイコンで一括コピー)")
+                    st.code("\n\n".join(api_errors[:10]), language=None)
+                else:
+                    st.caption("詳細エラーなし")
+        # live モードでも個別エンドポイントが失敗していればエラーを見せる
+        elif api_errors:
+            with st.expander(f"⚠ 個別 API エラー ({len(api_errors)}件)", expanded=True):
+                st.caption("メイン指標は取得できているが、一部のエンドポイントで失敗。右上のコピーアイコンで一括コピー可能。")
+                st.code("\n\n".join(api_errors[:10]), language=None)
+
+        # 診断: 生レスポンス (フィールド名のずれを確認するため)
+        raw_responses = metrics.get("_raw_responses", {})
+        if raw_responses:
+            with st.expander("🔧 診断: Ahrefs API 生レスポンス (フィールド名確認用)", expanded=False):
+                import json as _json
+                # 一括コピー用: 全 endpoint+response を 1 つの code block に連結 (右上アイコンでクリップボードへ)
+                st.caption("📋 全レスポンスをまとめてコピーする場合は、下のブロック右上のコピーアイコンを使用。")
+                dump_lines = []
+                for endpoint, resp in raw_responses.items():
+                    dump_lines.append(f"=== {endpoint} ===")
+                    if resp is None:
+                        dump_lines.append("(None - エラー)")
+                    else:
+                        dump_lines.append(_json.dumps(resp, ensure_ascii=False, indent=2)[:3000])
+                    dump_lines.append("")
+                st.code("\n".join(dump_lines), language="json")
+                st.divider()
+                # 個別表示 (見やすさ重視)
+                st.caption("以下は endpoint 別の個別表示 (各ブロック右上アイコンで個別コピー)。")
+                for endpoint, resp in raw_responses.items():
+                    st.markdown(f"**`{endpoint}`**")
+                    if resp is None:
+                        st.code("(None - エラー)", language=None)
+                    else:
+                        st.code(_json.dumps(resp, ensure_ascii=False, indent=2)[:3000], language="json")
+
+        kc1, kc2, kc3, kc4 = st.columns(4)
+        with kc1:
+            st.markdown(
+                f'<div class="kpi-card"><div class="kpi-label">Domain Rating</div><div class="kpi-value">{metrics.get("domain_rating", 0)}<span style="font-size:0.78rem;color:#6b6b6b;margin-left:0.2rem;">/100</span></div><div class="kpi-sub">前月比 ±</div></div>',
+                unsafe_allow_html=True,
+            )
+        with kc2:
+            st.markdown(
+                f'<div class="kpi-card"><div class="kpi-label">月間自然検索セッション</div><div class="kpi-value">{metrics.get("monthly_organic_sessions", 0):,}</div><div class="kpi-sub">直近30日</div></div>',
+                unsafe_allow_html=True,
+            )
+        with kc3:
+            st.markdown(
+                f'<div class="kpi-card"><div class="kpi-label">被リンク元ドメイン (全体)</div><div class="kpi-value">{metrics.get("referring_domains_total", 0)}</div><div class="kpi-sub">RD 全カウント</div></div>',
+                unsafe_allow_html=True,
+            )
+        with kc4:
+            st.markdown(
+                f'<div class="kpi-card"><div class="kpi-label">被リンク元ドメイン (価値あり)</div><div class="kpi-value">{metrics.get("referring_domains_quality", 0)}</div><div class="kpi-sub">dofollow / 非スパム</div></div>',
+                unsafe_allow_html=True,
+            )
+        st.download_button(
+            label="📥 KPI CSV",
+            data=csv_export.kpis_csv(metrics),
+            file_name=csv_export.make_filename(ahrefs_domain, "kpi"),
+            mime="text/csv",
+            key="dl_kpi",
+        )
+
+        # ─── AI露出 (Ahrefs Brand Radar) を 8カラム横一列で表示 ───
+        br = ahrefs.get("brand_radar", {})
+        br_platforms = br.get("platforms", {}) if isinstance(br, dict) else {}
+        br_total = br.get("total", 0) if isinstance(br, dict) else 0
+        if br_platforms:
+            st.markdown("#### AI露出")
+            # 順序: 合計 → 7プラットフォーム
+            br_cards = [("合計", br_total, "全プラットフォーム")]
+            for key in [
+                "google_ai_overviews", "google_ai_mode", "chatgpt",
+                "gemini", "perplexity", "copilot", "grok",
+            ]:
+                p = br_platforms.get(key, {})
+                if isinstance(p, dict):
+                    br_cards.append((p.get("label", key), p.get("responses", 0), "AI 引用"))
+            cols = st.columns(len(br_cards))
+            for col, (label, value, sub) in zip(cols, br_cards):
+                with col:
+                    st.markdown(
+                        f'<div class="kpi-card"><div class="kpi-label">{label}</div><div class="kpi-value">{value:,}</div><div class="kpi-sub">{sub}</div></div>',
+                        unsafe_allow_html=True,
+                    )
+            st.caption(
+                "AI 引用 (Ahrefs Brand Radar) — 自社ドメイン配下のURLが各 AI チャットボット応答内で引用された累計回数。URL一致モード適用。"
+            )
+            st.download_button(
+                label="📥 AI露出 CSV",
+                data=csv_export.brand_radar_csv(br),
+                file_name=csv_export.make_filename(ahrefs_domain, "ai_exposure"),
+                mime="text/csv",
+                key="dl_ai_exposure",
+            )
+
+        st.markdown("")
+        pages_display = metrics.get("organic_pages_count_display") or str(metrics.get("organic_pages_count", 0))
+        st.info(f"**{pages_display}** ページが自然検索流入を獲得中 (Ahrefs 上位ページ)")
+
+        st.markdown("#### 流入貢献KW 上位10")
+        domain_for_links = ahrefs.get("domain", "")
+        kw_data = ahrefs.get("top_keywords", [])
+        if kw_data:
+            kw_table = "| KW | 月間 | 順位 | 獲得URL |\n|---|---|---|---|\n"
+            for k in kw_data:
+                ku = k.get("url", "")
+                # 既にフルURLが入っている。path のみの場合はドメインを補完。
+                if ku.startswith("http"):
+                    kw_url = ku
+                elif ku.startswith("/"):
+                    kw_url = f"https://{domain_for_links}{ku}"
+                else:
+                    kw_url = ku or "#"
+                kw_table += f"| {k.get('keyword','')} | {k.get('volume',0):,} | {k.get('position',0)} | [{kw_url}]({kw_url}) |\n"
+            st.markdown(kw_table)
+            st.download_button(
+                label="📥 流入貢献KW CSV",
+                data=csv_export.top_keywords_csv(kw_data),
+                file_name=csv_export.make_filename(ahrefs_domain, "top_keywords"),
+                mime="text/csv",
+                key="dl_top_keywords",
+            )
+        else:
+            st.caption("(データなし)")
+
+        st.markdown("#### 流入URL 上位10")
+        page_data = ahrefs.get("top_pages", [])
+        if page_data:
+            page_table = "| URL | 流入貢献KW | 検索Vol | 推定セッション/月 |\n|---|---|---|---|\n"
+            for p in page_data:
+                pu = p.get("url", "")
+                if pu.startswith("http"):
+                    p_url = pu
+                elif pu.startswith("/"):
+                    p_url = f"https://{domain_for_links}{pu}"
+                else:
+                    p_url = pu or "#"
+                top_kw = p.get("top_keyword") or "—"
+                top_vol = p.get("top_keyword_volume", 0)
+                vol_disp = f"{top_vol:,}" if top_vol else "—"
+                page_table += f"| [{p_url}]({p_url}) | {top_kw} | {vol_disp} | {p.get('estimated_sessions',0):,} |\n"
+            st.markdown(page_table)
+            st.download_button(
+                label="📥 流入URL CSV",
+                data=csv_export.top_pages_csv(page_data),
+                file_name=csv_export.make_filename(ahrefs_domain, "top_pages"),
+                mime="text/csv",
+                key="dl_top_pages",
+            )
+        else:
+            st.caption("(データなし)")
+
+        st.markdown("#### 流入上位ディレクトリ")
+        dir_data = ahrefs.get("top_directories", [])
+        if dir_data:
+            dir_table = "| ディレクトリ | ページ数 | 月間流入 | シェア |\n|---|---|---|---|\n"
+            for d in dir_data:
+                du = d.get("directory", "")
+                d_url = f"https://{domain_for_links}{du}" if du.startswith("/") else (du or "#")
+                dir_table += f"| [{du}]({d_url}) | {d.get('pages',0)} | {d.get('monthly_sessions',0):,} | {d.get('share_pct',0):.1f}% |\n"
+            st.markdown(dir_table)
+            st.download_button(
+                label="📥 流入ディレクトリ CSV",
+                data=csv_export.top_directories_csv(dir_data),
+                file_name=csv_export.make_filename(ahrefs_domain, "top_directories"),
+                mime="text/csv",
+                key="dl_top_directories",
+            )
+        else:
+            st.caption("(データなし)")
+
+
+def render_tab_references(data: dict) -> None:
+    """TAB 参考: 公式 vs 実態 (contradictions) と出典リスト (sources) を描画。"""
+    contradictions = data.get("contradictions", [])
+    sources = data.get("sources", [])
+    reference_empty = bool(data.get("error")) or (not contradictions and not sources)
+    _ref_domain = (data.get("ahrefs", {}) or {}).get("domain", "") if isinstance(data, dict) else ""
+
+    if reference_empty:
+        st.info("(分析データなし — 分析が完了するとここに参考情報・出典が表示されます)")
+    else:
+        st.markdown("#### 参考: Google公式系情報より調査サイトに関連する項目")
+        st.caption("公式発言を鵜呑みにしないこと。施策判断のときに必ず参照する。")
+        if contradictions:
+            contra_table = "| Googleの公式メッセージ | 内部実装の事実 | 裏付け資料 |\n|---|---|---|\n"
+            for c in contradictions:
+                # LLM が稀にスキーマ無視で string を返すケースに耐える
+                if not isinstance(c, dict):
+                    pub = str(c).replace("|", "\\|")
+                    contra_table += f"| {pub} | — | — |\n"
+                    continue
+                pub = str(c.get("public", "")).replace("|", "\\|")
+                intl = str(c.get("internal", "")).replace("|", "\\|")
+                src = f"[{c.get('source_label','')}]({c.get('source_url','#')})"
+                contra_table += f"| {pub} | {intl} | {src} |\n"
+            st.markdown(contra_table)
+            st.download_button(
+                label="📥 公式 vs 実態 (contradictions) CSV",
+                data=csv_export.contradictions_csv(contradictions),
+                file_name=csv_export.make_filename(_ref_domain, "contradictions"),
+                mime="text/csv",
+                key="dl_contradictions",
+            )
+        else:
+            st.caption("(参考対比情報なし)")
+
+        st.markdown("#### 出典・参考資料")
+        if sources:
+            src_lines = []
+            for i, s in enumerate(sources, 1):
+                if not isinstance(s, dict):
+                    src_lines.append(f"{i}. {s}")
+                    continue
+                src_lines.append(
+                    f"{i}. [{s.get('text','')}]({s.get('url','#')}) `[{s.get('label','')}]`"
+                )
+            st.markdown("\n".join(src_lines))
+            st.download_button(
+                label="📥 出典 (sources) CSV",
+                data=csv_export.sources_csv(sources),
+                file_name=csv_export.make_filename(_ref_domain, "sources"),
+                mime="text/csv",
+                key="dl_sources",
+            )
+        else:
+            st.caption("(出典データなし)")
+
+
+if mode == "サイト分析":
+
+    # ─── 実行ボタン押下時: データ更新 ───
+    if run_btn:
+        run_analysis_with_progress(url, url_match)
+
+    # ─── データ取得 (session_state にあれば使用、無ければ mock) ───
+    data = st.session_state.get("analysis_data")
+    is_example_data = data is None or not isinstance(data, dict) or "summary" not in data
+    if is_example_data:
+        data = _build_mock_structured(url)
+        st.info("【例】これはサンプル表示です。実際の分析結果を表示するには、左の「分析を実行」ボタンを押してください。")
+
+    data = normalize_analysis_data(data)
+    summary = data["summary"]
+    url_meta = data.get("url_meta", {}) if isinstance(data.get("url_meta"), dict) else {}
+    target_url = data.get("target_url", url) or url
+
+    render_score_header(data, summary, url_meta, target_url)
+    render_summary_section(summary)
+
     st.divider()
 
     # ─── 3タブ ───
     tab1, tab2, tab3 = st.tabs(["課題サマリ", "サイトデータ", "参考"])
 
     with tab1:
-        # ダウンロード行 (5軸スコア + 全軸まとめ + 全データ ZIP)
-        _domain_for_dl = (data.get("ahrefs", {}) or {}).get("domain", "") if isinstance(data, dict) else ""
-        dlc1, dlc2, dlc3 = st.columns([1, 1, 1])
-        with dlc1:
-            st.download_button(
-                label="📥 5軸スコア CSV",
-                data=csv_export.axis_scores_csv(summary),
-                file_name=csv_export.make_filename(_domain_for_dl, "axis_scores"),
-                mime="text/csv",
-                key="dl_axis_scores",
-            )
-        with dlc2:
-            st.download_button(
-                label="📥 全軸まとめ CSV",
-                data=csv_export.all_axes_combined_csv(data.get("axes", {}), summary.get("axes", []) if isinstance(summary, dict) else []),
-                file_name=csv_export.make_filename(_domain_for_dl, "axes_combined"),
-                mime="text/csv",
-                help="5軸の issues / passed / unverifiable を1ファイルにまとめてダウンロード",
-                key="dl_axes_combined",
-            )
-        with dlc3:
-            try:
-                st.download_button(
-                    label="📦 全データ ZIP",
-                    data=csv_export.build_full_zip(data),
-                    file_name=csv_export.make_filename(_domain_for_dl, "all_data").replace(".csv", ".zip"),
-                    mime="application/zip",
-                    key="dl_zip_all_tab1",
-                )
-            except Exception:
-                pass
-
-        st.markdown("**課題可能性** _(発見数 / 全チェック項目数)_")
-
-        axes_meta = summary["axes"]
-        axis_keys = [a["key"] for a in axes_meta]
-        axis_names = {a["key"]: a["name"] for a in axes_meta}
-        axis_labels = [
-            f"{a['name']} {a['issues']}/{a['total']}" for a in axes_meta
-        ]
-        axis_tabs = st.tabs(axis_labels)
-
-        for tab_obj, axis_key in zip(axis_tabs, axis_keys):
-            with tab_obj:
-                _render_axis_content(
-                    data["axes"].get(axis_key, {"issues": [], "passed": [], "unverifiable": []}),
-                    axis_key=axis_key,
-                    axis_name=axis_names.get(axis_key, ""),
-                    domain=_domain_for_dl,
-                )
-
-        st.divider()
-        st.markdown("### 実施にあたって要検討施策")
-        donts = data.get("donts", [])
-        if donts:
-            donts_lines = []
-            for d in donts:
-                if not isinstance(d, dict):
-                    donts_lines.append(f"- {d}")
-                    continue
-                donts_lines.append(
-                    f"- **{d.get('name','')}** — {d.get('reason','')} [{d.get('evidence_label','')}]({d.get('evidence_url','#')})"
-                )
-            st.warning("\n".join(donts_lines))
-            st.download_button(
-                label="📥 要検討施策 (donts) CSV",
-                data=csv_export.donts_csv(donts),
-                file_name=csv_export.make_filename(_domain_for_dl, "donts"),
-                mime="text/csv",
-                key="dl_donts",
-            )
-
+        render_tab_issues(data, summary)
     with tab2:
-        st.markdown("#### Ahrefs サイト指標")
-        ahrefs = data.get("ahrefs", {})
-        metrics = ahrefs.get("metrics", {})
-        fetched_at = metrics.get("fetched_at", "")
-        api_status = metrics.get("api_status", "")
-        api_errors = metrics.get("api_errors", [])
-        ahrefs_empty = bool(data.get("error")) or not metrics
-        ahrefs_domain = ahrefs.get("domain", "") if isinstance(ahrefs, dict) else ""
-
-        if ahrefs_empty:
-            st.info("(分析データなし — 分析が完了するとここに Ahrefs サイト指標が表示されます)")
-        else:
-            # 全データ ZIP 一括ダウンロード (タブ上部)
-            try:
-                _zip_bytes = csv_export.build_full_zip(data)
-                _zip_name = csv_export.make_filename(ahrefs_domain, "all_data").replace(".csv", ".zip")
-                st.download_button(
-                    label="📦 全データ ZIP ダウンロード",
-                    data=_zip_bytes,
-                    file_name=_zip_name,
-                    mime="application/zip",
-                    key="dl_zip_all",
-                    help="画面表示中の全データ (KPI / KW / URL / ディレクトリ / AI露出 / 各軸 issues・passed・unverifiable / 出典 など) を 1つの ZIP にまとめてダウンロード",
-                )
-            except Exception as _e:
-                st.caption(f"(ZIP 生成エラー: {_e})")
-            st.caption(f"出典: Ahrefs Site Explorer / {datetime.now().strftime('%Y-%m-%d')}時点 ({fetched_at})")
-            # API ステータス警告
-            if api_status and api_status != "live":
-                with st.expander(f"⚠ Ahrefs API ステータス: {api_status}", expanded=False):
-                    if api_errors:
-                        st.markdown("**API エラー詳細:** (右上のコピーアイコンで一括コピー)")
-                        st.code("\n\n".join(api_errors[:10]), language=None)
-                    else:
-                        st.caption("詳細エラーなし")
-            # live モードでも個別エンドポイントが失敗していればエラーを見せる
-            elif api_errors:
-                with st.expander(f"⚠ 個別 API エラー ({len(api_errors)}件)", expanded=True):
-                    st.caption("メイン指標は取得できているが、一部のエンドポイントで失敗。右上のコピーアイコンで一括コピー可能。")
-                    st.code("\n\n".join(api_errors[:10]), language=None)
-
-            # 診断: 生レスポンス (フィールド名のずれを確認するため)
-            raw_responses = metrics.get("_raw_responses", {})
-            if raw_responses:
-                with st.expander("🔧 診断: Ahrefs API 生レスポンス (フィールド名確認用)", expanded=False):
-                    import json as _json
-                    # 一括コピー用: 全 endpoint+response を 1 つの code block に連結 (右上アイコンでクリップボードへ)
-                    st.caption("📋 全レスポンスをまとめてコピーする場合は、下のブロック右上のコピーアイコンを使用。")
-                    dump_lines = []
-                    for endpoint, resp in raw_responses.items():
-                        dump_lines.append(f"=== {endpoint} ===")
-                        if resp is None:
-                            dump_lines.append("(None - エラー)")
-                        else:
-                            dump_lines.append(_json.dumps(resp, ensure_ascii=False, indent=2)[:3000])
-                        dump_lines.append("")
-                    st.code("\n".join(dump_lines), language="json")
-                    st.divider()
-                    # 個別表示 (見やすさ重視)
-                    st.caption("以下は endpoint 別の個別表示 (各ブロック右上アイコンで個別コピー)。")
-                    for endpoint, resp in raw_responses.items():
-                        st.markdown(f"**`{endpoint}`**")
-                        if resp is None:
-                            st.code("(None - エラー)", language=None)
-                        else:
-                            st.code(_json.dumps(resp, ensure_ascii=False, indent=2)[:3000], language="json")
-
-            kc1, kc2, kc3, kc4 = st.columns(4)
-            with kc1:
-                st.markdown(
-                    f'<div class="kpi-card"><div class="kpi-label">Domain Rating</div><div class="kpi-value">{metrics.get("domain_rating", 0)}<span style="font-size:0.78rem;color:#6b6b6b;margin-left:0.2rem;">/100</span></div><div class="kpi-sub">前月比 ±</div></div>',
-                    unsafe_allow_html=True,
-                )
-            with kc2:
-                st.markdown(
-                    f'<div class="kpi-card"><div class="kpi-label">月間自然検索セッション</div><div class="kpi-value">{metrics.get("monthly_organic_sessions", 0):,}</div><div class="kpi-sub">直近30日</div></div>',
-                    unsafe_allow_html=True,
-                )
-            with kc3:
-                st.markdown(
-                    f'<div class="kpi-card"><div class="kpi-label">被リンク元ドメイン (全体)</div><div class="kpi-value">{metrics.get("referring_domains_total", 0)}</div><div class="kpi-sub">RD 全カウント</div></div>',
-                    unsafe_allow_html=True,
-                )
-            with kc4:
-                st.markdown(
-                    f'<div class="kpi-card"><div class="kpi-label">被リンク元ドメイン (価値あり)</div><div class="kpi-value">{metrics.get("referring_domains_quality", 0)}</div><div class="kpi-sub">dofollow / 非スパム</div></div>',
-                    unsafe_allow_html=True,
-                )
-            st.download_button(
-                label="📥 KPI CSV",
-                data=csv_export.kpis_csv(metrics),
-                file_name=csv_export.make_filename(ahrefs_domain, "kpi"),
-                mime="text/csv",
-                key="dl_kpi",
-            )
-
-            # ─── AI露出 (Ahrefs Brand Radar) を 8カラム横一列で表示 ───
-            br = ahrefs.get("brand_radar", {})
-            br_platforms = br.get("platforms", {}) if isinstance(br, dict) else {}
-            br_total = br.get("total", 0) if isinstance(br, dict) else 0
-            if br_platforms:
-                st.markdown("#### AI露出")
-                # 順序: 合計 → 7プラットフォーム
-                br_cards = [("合計", br_total, "全プラットフォーム")]
-                for key in [
-                    "google_ai_overviews", "google_ai_mode", "chatgpt",
-                    "gemini", "perplexity", "copilot", "grok",
-                ]:
-                    p = br_platforms.get(key, {})
-                    if isinstance(p, dict):
-                        br_cards.append((p.get("label", key), p.get("responses", 0), "AI 引用"))
-                cols = st.columns(len(br_cards))
-                for col, (label, value, sub) in zip(cols, br_cards):
-                    with col:
-                        st.markdown(
-                            f'<div class="kpi-card"><div class="kpi-label">{label}</div><div class="kpi-value">{value:,}</div><div class="kpi-sub">{sub}</div></div>',
-                            unsafe_allow_html=True,
-                        )
-                st.caption(
-                    "AI 引用 (Ahrefs Brand Radar) — 自社ドメイン配下のURLが各 AI チャットボット応答内で引用された累計回数。URL一致モード適用。"
-                )
-                st.download_button(
-                    label="📥 AI露出 CSV",
-                    data=csv_export.brand_radar_csv(br),
-                    file_name=csv_export.make_filename(ahrefs_domain, "ai_exposure"),
-                    mime="text/csv",
-                    key="dl_ai_exposure",
-                )
-
-            st.markdown("")
-            pages_display = metrics.get("organic_pages_count_display") or str(metrics.get("organic_pages_count", 0))
-            st.info(f"**{pages_display}** ページが自然検索流入を獲得中 (Ahrefs 上位ページ)")
-
-            st.markdown("#### 流入貢献KW 上位10")
-            domain_for_links = ahrefs.get("domain", "")
-            kw_data = ahrefs.get("top_keywords", [])
-            if kw_data:
-                kw_table = "| KW | 月間 | 順位 | 獲得URL |\n|---|---|---|---|\n"
-                for k in kw_data:
-                    ku = k.get("url", "")
-                    # 既にフルURLが入っている。path のみの場合はドメインを補完。
-                    if ku.startswith("http"):
-                        kw_url = ku
-                    elif ku.startswith("/"):
-                        kw_url = f"https://{domain_for_links}{ku}"
-                    else:
-                        kw_url = ku or "#"
-                    kw_table += f"| {k.get('keyword','')} | {k.get('volume',0):,} | {k.get('position',0)} | [{kw_url}]({kw_url}) |\n"
-                st.markdown(kw_table)
-                st.download_button(
-                    label="📥 流入貢献KW CSV",
-                    data=csv_export.top_keywords_csv(kw_data),
-                    file_name=csv_export.make_filename(ahrefs_domain, "top_keywords"),
-                    mime="text/csv",
-                    key="dl_top_keywords",
-                )
-            else:
-                st.caption("(データなし)")
-
-            st.markdown("#### 流入URL 上位10")
-            page_data = ahrefs.get("top_pages", [])
-            if page_data:
-                page_table = "| URL | 流入貢献KW | 検索Vol | 推定セッション/月 |\n|---|---|---|---|\n"
-                for p in page_data:
-                    pu = p.get("url", "")
-                    if pu.startswith("http"):
-                        p_url = pu
-                    elif pu.startswith("/"):
-                        p_url = f"https://{domain_for_links}{pu}"
-                    else:
-                        p_url = pu or "#"
-                    top_kw = p.get("top_keyword") or "—"
-                    top_vol = p.get("top_keyword_volume", 0)
-                    vol_disp = f"{top_vol:,}" if top_vol else "—"
-                    page_table += f"| [{p_url}]({p_url}) | {top_kw} | {vol_disp} | {p.get('estimated_sessions',0):,} |\n"
-                st.markdown(page_table)
-                st.download_button(
-                    label="📥 流入URL CSV",
-                    data=csv_export.top_pages_csv(page_data),
-                    file_name=csv_export.make_filename(ahrefs_domain, "top_pages"),
-                    mime="text/csv",
-                    key="dl_top_pages",
-                )
-            else:
-                st.caption("(データなし)")
-
-            st.markdown("#### 流入上位ディレクトリ")
-            dir_data = ahrefs.get("top_directories", [])
-            if dir_data:
-                dir_table = "| ディレクトリ | ページ数 | 月間流入 | シェア |\n|---|---|---|---|\n"
-                for d in dir_data:
-                    du = d.get("directory", "")
-                    d_url = f"https://{domain_for_links}{du}" if du.startswith("/") else (du or "#")
-                    dir_table += f"| [{du}]({d_url}) | {d.get('pages',0)} | {d.get('monthly_sessions',0):,} | {d.get('share_pct',0):.1f}% |\n"
-                st.markdown(dir_table)
-                st.download_button(
-                    label="📥 流入ディレクトリ CSV",
-                    data=csv_export.top_directories_csv(dir_data),
-                    file_name=csv_export.make_filename(ahrefs_domain, "top_directories"),
-                    mime="text/csv",
-                    key="dl_top_directories",
-                )
-            else:
-                st.caption("(データなし)")
-
+        render_tab_sitedata(data)
     with tab3:
-        contradictions = data.get("contradictions", [])
-        sources = data.get("sources", [])
-        reference_empty = bool(data.get("error")) or (not contradictions and not sources)
-        _ref_domain = (data.get("ahrefs", {}) or {}).get("domain", "") if isinstance(data, dict) else ""
-
-        if reference_empty:
-            st.info("(分析データなし — 分析が完了するとここに参考情報・出典が表示されます)")
-        else:
-            st.markdown("#### 参考: Google公式系情報より調査サイトに関連する項目")
-            st.caption("公式発言を鵜呑みにしないこと。施策判断のときに必ず参照する。")
-            if contradictions:
-                contra_table = "| Googleの公式メッセージ | 内部実装の事実 | 裏付け資料 |\n|---|---|---|\n"
-                for c in contradictions:
-                    # LLM が稀にスキーマ無視で string を返すケースに耐える
-                    if not isinstance(c, dict):
-                        pub = str(c).replace("|", "\\|")
-                        contra_table += f"| {pub} | — | — |\n"
-                        continue
-                    pub = str(c.get("public", "")).replace("|", "\\|")
-                    intl = str(c.get("internal", "")).replace("|", "\\|")
-                    src = f"[{c.get('source_label','')}]({c.get('source_url','#')})"
-                    contra_table += f"| {pub} | {intl} | {src} |\n"
-                st.markdown(contra_table)
-                st.download_button(
-                    label="📥 公式 vs 実態 (contradictions) CSV",
-                    data=csv_export.contradictions_csv(contradictions),
-                    file_name=csv_export.make_filename(_ref_domain, "contradictions"),
-                    mime="text/csv",
-                    key="dl_contradictions",
-                )
-            else:
-                st.caption("(参考対比情報なし)")
-
-            st.markdown("#### 出典・参考資料")
-            if sources:
-                src_lines = []
-                for i, s in enumerate(sources, 1):
-                    if not isinstance(s, dict):
-                        src_lines.append(f"{i}. {s}")
-                        continue
-                    src_lines.append(
-                        f"{i}. [{s.get('text','')}]({s.get('url','#')}) `[{s.get('label','')}]`"
-                    )
-                st.markdown("\n".join(src_lines))
-                st.download_button(
-                    label="📥 出典 (sources) CSV",
-                    data=csv_export.sources_csv(sources),
-                    file_name=csv_export.make_filename(_ref_domain, "sources"),
-                    mime="text/csv",
-                    key="dl_sources",
-                )
-            else:
-                st.caption("(出典データなし)")
+        render_tab_references(data)
 
 
 # ─── Mode B: 施策レビュー ───────────────────────────────
