@@ -14,7 +14,7 @@ from __future__ import annotations
 import io
 import re
 import zipfile
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Iterable, Optional
 
 import pandas as pd
@@ -35,8 +35,8 @@ def _to_csv_bytes(rows: Iterable[dict], columns: Optional[list[str]] = None) -> 
                 df[c] = ""
         df = df[columns]
     buf = io.StringIO()
-    df.to_csv(buf, index=False, encoding="utf-8")
-    return ("﻿" + buf.getvalue()).encode("utf-8")
+    df.to_csv(buf, index=False)  # StringIO 相手の encoding 引数は無効なので渡さない
+    return ("﻿" + buf.getvalue()).encode("utf-8")  # ﻿ = UTF-8 BOM (Excel 文字化け対策)
 
 
 def _slugify_domain(domain: str) -> str:
@@ -50,7 +50,7 @@ def _slugify_domain(domain: str) -> str:
 
 
 def _today_iso() -> str:
-    return datetime.utcnow().strftime("%Y-%m-%d")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
 def make_filename(domain: str, dataset: str) -> str:
@@ -145,12 +145,10 @@ def url_meta_csv(url_meta: dict, target_url: str = "") -> bytes:
     rows = [
         {"項目": "対象URL", "値": target_url},
         {"項目": "Title", "値": url_meta.get("title", "")},
-        {"項目": "Meta-description", "値": url_meta.get("description", "")},
-        {"項目": "インデックス状態", "値": url_meta.get("indexable_summary", "")},
+        {"項目": "Meta-description", "値": url_meta.get("meta_description", "")},
+        {"項目": "インデックス状態", "値": url_meta.get("index_status", "")},
         {"項目": "canonical", "値": url_meta.get("canonical", "")},
-        {"項目": "viewport", "値": url_meta.get("viewport", "")},
-        {"項目": "h1", "値": url_meta.get("h1", "")},
-        {"項目": "構造化データ (種類)", "値": ", ".join(url_meta.get("schema_types", []) or [])},
+        {"項目": "構造化データ (種類)", "値": ", ".join(url_meta.get("structured_data", []) or [])},
     ]
     return _to_csv_bytes(rows, ["項目", "値"])
 

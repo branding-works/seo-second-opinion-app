@@ -206,25 +206,6 @@ def _fetch_page_meta(url: str) -> dict:
         }
 
 
-def _extract_json_from_response(text: str) -> Optional[dict]:
-    """LLM応答からJSON部分を抽出。コードブロック対応。"""
-    # ```json ... ``` ブロック
-    m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
-    if m:
-        try:
-            return json.loads(m.group(1))
-        except json.JSONDecodeError:
-            pass
-    # 単独JSON
-    m = re.search(r"(\{[\s\S]*\})", text)
-    if m:
-        try:
-            return json.loads(m.group(1))
-        except json.JSONDecodeError:
-            pass
-    return None
-
-
 _AXIS_SCHEMA = {
     "type": "object",
     "properties": {
@@ -280,97 +261,6 @@ _AXIS_SCHEMA = {
     },
     "required": ["issues", "passed"],
 }
-
-ANALYSIS_TOOL = {
-    "name": "submit_seo_analysis",
-    "description": (
-        "SEO セカンドオピニオン分析の構造化結果を提出する。"
-        "5軸 (内部SEO・テクニカル / 外部SEO・サイテーション / コンテンツSEO・記事 / EEAT・広報 / AI露出) で 20点満点ずつ採点し、"
-        "課題項目と通過項目を分けて格納する。"
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "summary": {
-                "type": "object",
-                "properties": {
-                    "total_score": {"type": "integer", "minimum": 0, "maximum": 100},
-                    "axes": {
-                        "type": "array",
-                        "minItems": 5,
-                        "maxItems": 5,
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "key": {"type": "string", "enum": ["internal_seo", "external_seo", "content_seo", "eeat", "ai_exposure"]},
-                                "name": {"type": "string"},
-                                "score": {"type": "integer", "minimum": 0, "maximum": 20},
-                                "issues": {"type": "integer", "minimum": 0},
-                                "total": {"type": "integer"},
-                            },
-                            "required": ["key", "name", "score", "issues", "total"],
-                        },
-                    },
-                    "strengths": {"type": "string"},
-                    "concerns": {"type": "string"},
-                    "priority_action": {"type": "string"},
-                },
-                "required": ["total_score", "axes", "strengths", "concerns", "priority_action"],
-            },
-            "axes": {
-                "type": "object",
-                "properties": {
-                    "internal_seo": _AXIS_SCHEMA,
-                    "external_seo": _AXIS_SCHEMA,
-                    "content_seo": _AXIS_SCHEMA,
-                    "eeat": _AXIS_SCHEMA,
-                    "ai_exposure": _AXIS_SCHEMA,
-                },
-                "required": ["internal_seo", "external_seo", "content_seo", "eeat", "ai_exposure"],
-            },
-            "contradictions": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "public": {"type": "string"},
-                        "internal": {"type": "string"},
-                        "source_label": {"type": "string"},
-                        "source_url": {"type": "string"},
-                    },
-                    "required": ["public", "internal", "source_label", "source_url"],
-                },
-            },
-            "donts": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string"},
-                        "reason": {"type": "string"},
-                        "evidence_label": {"type": "string"},
-                        "evidence_url": {"type": "string"},
-                    },
-                    "required": ["name", "reason", "evidence_label", "evidence_url"],
-                },
-            },
-            "sources": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "text": {"type": "string"},
-                        "url": {"type": "string"},
-                        "label": {"type": "string"},
-                    },
-                    "required": ["text", "url", "label"],
-                },
-            },
-        },
-        "required": ["summary", "axes", "contradictions", "donts", "sources"],
-    },
-}
-
 
 # ─── 並列分割版 (Mode A 高速化) で使う tool 定義 ────────────────────────
 # analyze_site_structured を 6 並列 (5軸 + サマリー) に分割実行するための
@@ -470,13 +360,34 @@ SUMMARY_TOOL = {
 
 
 # 5軸の (key, 表示名, total) — サマリースコア計算とエラー時のフォールバックで共有
-_AXIS_META = [
+AXIS_META = [
     {"key": "internal_seo", "name": "内部SEO・テクニカル", "total": 17, "needs_ahrefs": False},
     {"key": "external_seo", "name": "外部SEO・サイテーション", "total": 7, "needs_ahrefs": True},
     {"key": "content_seo", "name": "コンテンツSEO・記事", "total": 21, "needs_ahrefs": True},
     {"key": "eeat", "name": "EEAT・広報", "total": 14, "needs_ahrefs": True},
     {"key": "ai_exposure", "name": "AI露出 (LLMO・AI引用)", "total": 8, "needs_ahrefs": False},
 ]
+
+
+def extract_scores_for_log(data) -> tuple[dict, Optional[int]]:
+    """分析結果 dict から DB ログ用の (axis_scores, total_score) を取り出す。
+
+    axis_scores は {軸名: score} の dict。summary が壊れている場合は ({}, None)。
+    """
+    if not isinstance(data, dict):
+        return {}, None
+    summary = data.get("summary")
+    if not isinstance(summary, dict):
+        return {}, None
+    axes = summary.get("axes")
+    if not isinstance(axes, list):
+        return {}, None
+    axis_scores = {
+        a.get("name", "?"): a.get("score", 0)
+        for a in axes if isinstance(a, dict)
+    }
+    total = summary.get("total_score")
+    return axis_scores, total if isinstance(total, int) else None
 
 
 def _build_empty_structured(url: str, ahrefs_data: dict, page_meta: dict, error: str = "") -> dict:
@@ -498,11 +409,8 @@ def _build_empty_structured(url: str, ahrefs_data: dict, page_meta: dict, error:
         "summary": {
             "total_score": 0,
             "axes": [
-                {"key": "internal_seo", "name": "内部SEO・テクニカル", "score": 0, "issues": 0, "total": 17},
-                {"key": "external_seo", "name": "外部SEO・サイテーション", "score": 0, "issues": 0, "total": 7},
-                {"key": "content_seo", "name": "コンテンツSEO・記事", "score": 0, "issues": 0, "total": 21},
-                {"key": "eeat", "name": "EEAT・広報", "score": 0, "issues": 0, "total": 14},
-                {"key": "ai_exposure", "name": "AI露出 (LLMO・AI引用)", "score": 0, "issues": 0, "total": 8},
+                {"key": m["key"], "name": m["name"], "score": 0, "issues": 0, "total": m["total"]}
+                for m in AXIS_META
             ],
             "strengths": "",
             "concerns": "",
@@ -510,11 +418,8 @@ def _build_empty_structured(url: str, ahrefs_data: dict, page_meta: dict, error:
         },
         "url_meta": page_meta,
         "axes": {
-            "internal_seo": {"issues": [], "passed": [], "unverifiable": []},
-            "external_seo": {"issues": [], "passed": [], "unverifiable": []},
-            "content_seo": {"issues": [], "passed": [], "unverifiable": []},
-            "eeat": {"issues": [], "passed": [], "unverifiable": []},
-            "ai_exposure": {"issues": [], "passed": [], "unverifiable": []},
+            m["key"]: {"issues": [], "passed": [], "unverifiable": []}
+            for m in AXIS_META
         },
         "ahrefs": empty_ahrefs,
         "contradictions": [],
@@ -674,7 +579,7 @@ def analyze_site_structured(
     # Step 2: page_meta だけで判定可能な軸 (Ahrefs不要) を先行起動
     llm_pool = ThreadPoolExecutor(max_workers=6)
     axis_futures: dict = {}
-    for meta in _AXIS_META:
+    for meta in AXIS_META:
         if not meta["needs_ahrefs"]:
             axis_futures[meta["key"]] = llm_pool.submit(
                 _call_axis, client, url, meta["key"], meta["name"], meta["total"], page_meta, None
@@ -684,7 +589,7 @@ def analyze_site_structured(
     ahrefs_data = f_ahrefs.result()
     fetcher_pool.shutdown(wait=False)
 
-    for meta in _AXIS_META:
+    for meta in AXIS_META:
         if meta["needs_ahrefs"]:
             axis_futures[meta["key"]] = llm_pool.submit(
                 _call_axis, client, url, meta["key"], meta["name"], meta["total"], page_meta, ahrefs_data
@@ -694,7 +599,7 @@ def analyze_site_structured(
     # Step 4: 全 call の結果を取得 (各 call は独立に失敗しうる)
     axes_result: dict = {}
     axis_errors: list = []
-    for meta in _AXIS_META:
+    for meta in AXIS_META:
         future = axis_futures[meta["key"]]
         try:
             data = future.result(timeout=240)
@@ -720,7 +625,7 @@ def analyze_site_structured(
 
     summary_axes = []
     total_score = 0
-    for meta in _AXIS_META:
+    for meta in AXIS_META:
         issues_n = len(axes_result[meta["key"]].get("issues", []))
         score = round(((meta["total"] - issues_n) / meta["total"]) * 20) if meta["total"] > 0 else 0
         score = max(0, min(20, score))
@@ -752,63 +657,6 @@ def analyze_site_structured(
         # 一部 call が失敗した場合: アプリは動かしつつ警告だけ残す
         result["_warnings"] = axis_errors
     return result
-
-
-def analyze_site(
-    url: str,
-    url_match_mode: str = "完全一致",
-    ahrefs_data: Optional[dict] = None,
-    references: Optional[list] = None,
-) -> str:
-    """Mode A: サイト分析。
-
-    Args:
-        url: 対象URL
-        url_match_mode: URL一致モード
-        ahrefs_data: Ahrefs データ (None の場合は ahrefs_client から自動取得)
-        references: 参照する資料のリスト
-
-    Returns:
-        Markdown 形式の分析レポート文字列
-    """
-    if is_mock_mode():
-        return _mock_analyze_response(url)
-
-    client = get_client()
-    if client is None:
-        return "❌ ANTHROPIC_API_KEY が設定されていません。.env を確認してください。"
-
-    # Ahrefs データを自動取得 (mockモード時はダミーデータ、トークン設定時は実データ)
-    if ahrefs_data is None:
-        ahrefs_data = _gather_ahrefs_data(url, url_match_mode)
-
-    user_message = f"""モード: A (サイト分析)
-対象URL: {url}
-URL一致モード: {url_match_mode}
-
-事前収集データ (Ahrefs):
-{json.dumps(ahrefs_data, ensure_ascii=False, indent=2)}
-
-参照する資料: {', '.join(references) if references else '全て'}
-
-要求:
-- 5軸 (内部SEO・テクニカル / 外部SEO・サイテーション / コンテンツSEO・記事 / EEAT・広報 / AI露出 LLMO・AI引用) で 20点満点 × 5 = 100点でスコア化
-- 各課題項目には確認URL (実際にチェックしたページ) を添える
-- 通過項目 (問題のなかった項目) も同じく確認URL付きで列挙
-- エビデンスにはクリック可能なソースURLを必ず添える
-- 優先度は 高 / 中 / 低 の3段階のみ
-- サイトデータセクションは上記の「事前収集データ (Ahrefs)」を必ず使う。データが含まれているなら「(未取得)」と書かない
-- 出力は WebUI 表示用の Markdown 形式で、3タブ構造 (課題サマリ / サイトデータ / 参考) に対応するセクション分けで返す
-
-サイト分析を実行してください。"""
-
-    response = client.messages.create(
-        model=get_model(),
-        max_tokens=8000,
-        system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
-        messages=[{"role": "user", "content": user_message}],
-    )
-    return response.content[0].text
 
 
 def review_strategy(strategy_text: str, related_url: str = "") -> str:
@@ -1069,27 +917,6 @@ def _build_mock_structured(url: str) -> dict:
 
 
 # ─── Mock responses (APP_MODE=mock 時) ────────────────────
-
-def _mock_analyze_response(url: str) -> str:
-    """ダミーの分析結果 (UI開発用)。"""
-    return f"""# バーチャル根谷さんアドバイス: {url}
-
-## 総合スコア: 71/100
-
-- 内部SEO・テクニカル: 16/20 (3件 / 17項目)
-- 外部SEO・サイテーション: 14/20 (2件 / 7項目)
-- コンテンツSEO・記事: 15/20 (5件 / 21項目)
-- EEAT・広報: 11/20 (6件 / 14項目)
-- AI露出 (LLMO・AI引用): 15/20 (2件 / 8項目)
-
-## サマリー
-- **強み**: 独自の現場データに基づく記述が部分的に存在 / 内部リンク設計はトピックハブを形成しつつある
-- **懸念**: 著者プロフィール欠落により siteAuthority の伸びが阻害 / OriginalContentScore を押し下げる重複コンテンツが3記事
-- **施策案**: 著者プロフィールの構造化と組織情報の整備 (EEAT軸 / 優先度 高)
-
-⚠️ これは APP_MODE=mock で表示されているダミーデータです。実データを取得するには .env で ANTHROPIC_API_KEY を設定し APP_MODE=live に変更してください。
-"""
-
 
 def _mock_review_response() -> str:
     return """# 施策レビュー (mockデータ)
