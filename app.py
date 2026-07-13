@@ -349,15 +349,25 @@ st.markdown(
 )
 
 
+# ─── URL ?mode=review / ?mode=ask による固定モード ──────
+# 専用URLとして配布する用 (サイドバーのモード切り替えは非表示にして固定)。
+_MODE_URL_MAP = {"review": "施策レビュー", "ask": "個別質問"}
+_locked_mode = _MODE_URL_MAP.get(st.query_params.get("mode", ""))
+
+
 # ─── サイドバー (左パネル) ──────────────────────────────
 with st.sidebar:
-    st.markdown("**分析モード**")
-    mode = st.radio(
-        "モード",
-        ["サイト分析", "施策レビュー", "個別質問"],
-        label_visibility="collapsed",
-        key="mode",
-    )
+    if _locked_mode:
+        mode = _locked_mode
+        st.markdown(f"**{mode}専用ページ**")
+    else:
+        st.markdown("**分析モード**")
+        mode = st.radio(
+            "モード",
+            ["サイト分析", "施策レビュー", "個別質問"],
+            label_visibility="collapsed",
+            key="mode",
+        )
 
     st.divider()
 
