@@ -51,9 +51,17 @@ def _init_db_once() -> bool:
 _init_db_once()
 
 
+# ─── URL ?mode=review / ?mode=ask による固定モード ──────
+# 専用URLとして配布する用 (サイドバーのモード切り替えは非表示にして固定)。
+_MODE_URL_MAP = {"review": "施策レビュー", "ask": "個別質問"}
+_locked_mode = _MODE_URL_MAP.get(st.query_params.get("mode", ""))
+# タイトル表示用の現在モード (ロック時はロック先、通常時は前回選択 or デフォルト)
+_current_mode = _locked_mode or st.session_state.get("mode", "サイト分析")
+
+
 # ─── ページ設定 ────────────────────────────────────────
 st.set_page_config(
-    page_title="バーチャル根谷さんアドバイス",
+    page_title=_current_mode,
     page_icon="🌱",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -339,20 +347,14 @@ section[data-testid="stSidebar"][aria-expanded="false"] {
 
 # ─── ヘッダー ───────────────────────────────────────────
 st.markdown(
-    """
+    f"""
 <div class="bw-header">
-    <span class="bw-header-title">バーチャル根谷さんアドバイス</span>
+    <span class="bw-header-title">{_current_mode}</span>
     <a href="https://www.branding-works.jp/" target="_blank" rel="noopener">株式会社ブランディングワークス</a>
 </div>
 """,
     unsafe_allow_html=True,
 )
-
-
-# ─── URL ?mode=review / ?mode=ask による固定モード ──────
-# 専用URLとして配布する用 (サイドバーのモード切り替えは非表示にして固定)。
-_MODE_URL_MAP = {"review": "施策レビュー", "ask": "個別質問"}
-_locked_mode = _MODE_URL_MAP.get(st.query_params.get("mode", ""))
 
 
 # ─── サイドバー (左パネル) ──────────────────────────────
