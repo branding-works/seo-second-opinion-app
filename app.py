@@ -1426,10 +1426,18 @@ else:
         "SEO に関する単発の質問にエビデンス付きで回答します。Google公式が答えていない領域は推測ラベルを付けて明示し、根拠が弱い場合は「分からない」と言います。"
     )
     st.divider()
-    st.info("【例】以下はサンプル会話です。実際に質問するには、左の入力欄に質問を入力して「質問する」ボタンを押してください。")
 
-    st.markdown(
-        """
+    if "chat_history_ask" not in st.session_state:
+        st.session_state["chat_history_ask"] = []
+    history_ask = st.session_state["chat_history_ask"]
+    if "ask_followup_counter" not in st.session_state:
+        st.session_state["ask_followup_counter"] = 0
+
+    if not history_ask:
+        st.info("【例】以下はサンプル会話です。実際に質問するには、左の入力欄に質問を入力して「質問する」ボタンを押してください。")
+
+        st.markdown(
+            """
 <div class="chat-msg">
     <div class="chat-avatar chat-avatar-user">U</div>
     <div>
@@ -1440,37 +1448,123 @@ else:
     </div>
 </div>
 """,
-        unsafe_allow_html=True,
-    )
+            unsafe_allow_html=True,
+        )
 
     if run_btn:
         q_input = st.session_state.get("question_text", "")
         if not q_input.strip():
             st.warning("質問を入力してください")
         else:
+            turn_ok = True
             with st.status("質問を解析中...", expanded=True) as status:
-                st.write("❓ 質問を解析中...")
-                time.sleep(0.3)
-                st.write("📚 一次資料 (特許・公式・QRG・リーク・訴訟・VRP) を参照中...")
-                time.sleep(0.4)
-                st.write("🤖 Claude にリクエスト中...")
-                if is_mock_mode():
-                    time.sleep(0.7)
-                    result = answer_question(q_input)
-                    status.update(label="✓ 回答完了 (mockモード)", state="complete", expanded=False)
-                else:
-                    result = answer_question(q_input)
-                    st.write("✏️  結果を整形中...")
-                    time.sleep(0.2)
-                    status.update(label="✓ 回答完了", state="complete", expanded=False)
-            save_log_silently(
-                mode="個別質問",
-                target_url=None,
-                url_match_mode=None,
-                query_text=q_input,
-                total_score=None,
-                axis_scores=None,
-                full_result={"answer_markdown": result, "question": q_input},
+                try:
+                    st.write("❓ 質問を解析中...")
+                    time.sleep(0.3)
+                    st.write("📚 一次資料 (特許・公式・QRG・リーク・訴訟・VRP) を参照中...")
+                    time.sleep(0.4)
+                    st.write("🤖 Claude にリクエスト中...")
+                    if is_mock_mode():
+                        time.sleep(0.7)
+                        result, _ = answer_question(q_input, history=history_ask)
+                        status.update(label="✓ 回答完了 (mockモード)", state="complete", expanded=False)
+                    else:
+                        result, _ = answer_question(q_input, history=history_ask)
+                        st.write("✏️  結果を整形中...")
+                        time.sleep(0.2)
+                        status.update(label="✓ 回答完了", state="complete", expanded=False)
+                except Exception as e:
+                    turn_ok = False
+                    status.update(label="✗ エラー", state="error", expanded=True)
+                    st.error(
+                        f"❌ エラーが発生しました: {str(e)[:200]}\n\n"
+                        "会話が長くなりすぎた可能性があります。下の「新しい会話を始める」ボタンでリセットしてください。"
+                    )
+            if turn_ok:
+                history_ask.append({"role": "user", "content": q_input})
+                history_ask.append({"role": "assistant", "content": result})
+                save_log_silently(
+                    mode="個別質問",
+                    target_url=None,
+                    url_match_mode=None,
+                    query_text=q_input,
+                    total_score=None,
+                    axis_scores=None,
+                    full_result={
+                        "answer_markdown": result,
+                        "question": q_input,
+                        "turn_index": len(history_ask) // 2,
+                    },
+                )
+                st.rerun()
+
+    render_chat_history(history_ask)
+
+    if history_ask:
+        st.divider()
+        followup_ask = st.text_area(
+            "追加の質問",
+            key=f"ask_followup_text_{st.session_state['ask_followup_counter']}",
+            height=100,
+            placeholder="例: では、その根拠となる特許番号を教えてください",
+        )
+        col_send, col_reset = st.columns([3, 1])
+        with col_send:
+            send_followup_ask = st.button(
+                "この内容で追加質問する", key="send_followup_ask", use_container_width=True
             )
-            render_ai_chat_header()
-            st.markdown(result)
+        with col_reset:
+            reset_ask = st.button(
+                "新しい会話を始める", key="reset_ask", use_container_width=True
+            )
+
+        if reset_ask:
+            st.session_state["chat_history_ask"] = []
+            st.rerun()
+
+        if send_followup_ask:
+            if not followup_ask.strip():
+                st.warning("追加の質問を入力してください")
+            else:
+                turn_ok = True
+                with st.status("質問を解析中...", expanded=True) as status:
+                    try:
+                        st.write("❓ 質問を解析中...")
+                        time.sleep(0.3)
+                        st.write("📚 これまでの会話を踏まえて確認中...")
+                        time.sleep(0.4)
+                        st.write("🤖 Claude にリクエスト中...")
+                        if is_mock_mode():
+                            time.sleep(0.7)
+                            result, _ = answer_question(followup_ask, history=history_ask)
+                            status.update(label="✓ 回答完了 (mockモード)", state="complete", expanded=False)
+                        else:
+                            result, _ = answer_question(followup_ask, history=history_ask)
+                            st.write("✏️  結果を整形中...")
+                            time.sleep(0.2)
+                            status.update(label="✓ 回答完了", state="complete", expanded=False)
+                    except Exception as e:
+                        turn_ok = False
+                        status.update(label="✗ エラー", state="error", expanded=True)
+                        st.error(
+                            f"❌ エラーが発生しました: {str(e)[:200]}\n\n"
+                            "会話が長くなりすぎた可能性があります。上の「新しい会話を始める」ボタンでリセットしてください。"
+                        )
+                if turn_ok:
+                    history_ask.append({"role": "user", "content": followup_ask})
+                    history_ask.append({"role": "assistant", "content": result})
+                    save_log_silently(
+                        mode="個別質問",
+                        target_url=None,
+                        url_match_mode=None,
+                        query_text=followup_ask,
+                        total_score=None,
+                        axis_scores=None,
+                        full_result={
+                            "answer_markdown": result,
+                            "question": followup_ask,
+                            "turn_index": len(history_ask) // 2,
+                        },
+                    )
+                    st.session_state["ask_followup_counter"] += 1
+                    st.rerun()
