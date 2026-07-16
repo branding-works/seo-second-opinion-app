@@ -1268,11 +1268,19 @@ elif mode == "施策レビュー":
         "既にお持ちの SEO 施策案を貼り付けてください。Google特許・公式情報・QRG・リーク資料・DOJ訴訟資料・VRP に照らして1つずつ評価し、機能する根拠 / 機能しない根拠 / より良い代替案を提示します。"
     )
     st.divider()
-    st.info("【例】以下はサンプル会話です。実際にレビューするには、左の入力欄に施策案を貼り付けて「評価する」ボタンを押してください。")
 
-    # サンプル会話 (mock)
-    st.markdown(
-        """
+    if "chat_history_review" not in st.session_state:
+        st.session_state["chat_history_review"] = []
+    history_review = st.session_state["chat_history_review"]
+    if "review_followup_counter" not in st.session_state:
+        st.session_state["review_followup_counter"] = 0
+
+    if not history_review:
+        st.info("【例】以下はサンプル会話です。実際にレビューするには、左の入力欄に施策案を貼り付けて「評価する」ボタンを押してください。")
+
+        # サンプル会話 (mock)
+        st.markdown(
+            """
 <div class="chat-msg">
     <div class="chat-avatar chat-avatar-user">U</div>
     <div>
@@ -1289,8 +1297,8 @@ elif mode == "施策レビュー":
     </div>
 </div>
 """,
-        unsafe_allow_html=True,
-    )
+            unsafe_allow_html=True,
+        )
 
     if run_btn:
         review_input = st.session_state.get("review_text", "")
@@ -1298,32 +1306,117 @@ elif mode == "施策レビュー":
         if not review_input.strip():
             st.warning("施策案を入力してください")
         else:
+            turn_ok = True
             with st.status("施策レビューを実行中...", expanded=True) as status:
-                st.write("📋 施策案を解析中...")
-                time.sleep(0.3)
-                st.write("🔍 各案を特許・公式情報・QRG・リーク資料に照らして評価中...")
-                time.sleep(0.5)
-                st.write("🤖 Claude にリクエスト中...")
-                if is_mock_mode():
-                    time.sleep(0.7)
-                    result = review_strategy(review_input, related)
-                    status.update(label="✓ 評価完了 (mockモード)", state="complete", expanded=False)
-                else:
-                    result = review_strategy(review_input, related)
-                    st.write("✏️  結果を整形中...")
-                    time.sleep(0.2)
-                    status.update(label="✓ 評価完了", state="complete", expanded=False)
-            save_log_silently(
-                mode="施策レビュー",
-                target_url=related or None,
-                url_match_mode=None,
-                query_text=review_input,
-                total_score=None,
-                axis_scores=None,
-                full_result={"answer_markdown": result, "input": review_input, "related_url": related},
+                try:
+                    st.write("📋 施策案を解析中...")
+                    time.sleep(0.3)
+                    st.write("🔍 各案を特許・公式情報・QRG・リーク資料に照らして評価中...")
+                    time.sleep(0.5)
+                    st.write("🤖 Claude にリクエスト中...")
+                    if is_mock_mode():
+                        time.sleep(0.7)
+                        result, sent_message = review_strategy(review_input, related, history=history_review)
+                        status.update(label="✓ 評価完了 (mockモード)", state="complete", expanded=False)
+                    else:
+                        result, sent_message = review_strategy(review_input, related, history=history_review)
+                        st.write("✏️  結果を整形中...")
+                        time.sleep(0.2)
+                        status.update(label="✓ 評価完了", state="complete", expanded=False)
+                except Exception as e:
+                    turn_ok = False
+                    status.update(label="✗ エラー", state="error", expanded=True)
+                    st.error(
+                        f"❌ エラーが発生しました: {str(e)[:200]}\n\n"
+                        "会話が長くなりすぎた可能性があります。下の「新しい会話を始める」ボタンでリセットしてください。"
+                    )
+            if turn_ok:
+                history_review.append({"role": "user", "content": review_input})
+                history_review.append({"role": "assistant", "content": result})
+                save_log_silently(
+                    mode="施策レビュー",
+                    target_url=related or None,
+                    url_match_mode=None,
+                    query_text=review_input,
+                    total_score=None,
+                    axis_scores=None,
+                    full_result={
+                        "answer_markdown": result,
+                        "input": review_input,
+                        "related_url": related,
+                        "turn_index": len(history_review) // 2,
+                    },
+                )
+                st.rerun()
+
+    render_chat_history(history_review)
+
+    if history_review:
+        st.divider()
+        followup_review = st.text_area(
+            "追加の施策案・質問",
+            key=f"review_followup_text_{st.session_state['review_followup_counter']}",
+            height=120,
+            placeholder="例: 1番目の代替案について、もう少し具体的な実装手順を教えてください",
+        )
+        col_send, col_reset = st.columns([3, 1])
+        with col_send:
+            send_followup_review = st.button(
+                "この内容で続きを聞く", key="send_followup_review", use_container_width=True
             )
-            render_ai_chat_header()
-            st.markdown(result)
+        with col_reset:
+            reset_review = st.button(
+                "新しい会話を始める", key="reset_review", use_container_width=True
+            )
+
+        if reset_review:
+            st.session_state["chat_history_review"] = []
+            st.rerun()
+
+        if send_followup_review:
+            if not followup_review.strip():
+                st.warning("追加の質問を入力してください")
+            else:
+                turn_ok = True
+                with st.status("追加の質問を確認中...", expanded=True) as status:
+                    try:
+                        st.write("📋 追加の質問を確認中...")
+                        time.sleep(0.3)
+                        st.write("🤖 これまでの会話を踏まえて Claude にリクエスト中...")
+                        if is_mock_mode():
+                            time.sleep(0.7)
+                            result, sent_message = review_strategy(followup_review, "", history=history_review)
+                            status.update(label="✓ 回答完了 (mockモード)", state="complete", expanded=False)
+                        else:
+                            result, sent_message = review_strategy(followup_review, "", history=history_review)
+                            st.write("✏️  結果を整形中...")
+                            time.sleep(0.2)
+                            status.update(label="✓ 回答完了", state="complete", expanded=False)
+                    except Exception as e:
+                        turn_ok = False
+                        status.update(label="✗ エラー", state="error", expanded=True)
+                        st.error(
+                            f"❌ エラーが発生しました: {str(e)[:200]}\n\n"
+                            "会話が長くなりすぎた可能性があります。上の「新しい会話を始める」ボタンでリセットしてください。"
+                        )
+                if turn_ok:
+                    history_review.append({"role": "user", "content": followup_review})
+                    history_review.append({"role": "assistant", "content": result})
+                    save_log_silently(
+                        mode="施策レビュー",
+                        target_url=None,
+                        url_match_mode=None,
+                        query_text=followup_review,
+                        total_score=None,
+                        axis_scores=None,
+                        full_result={
+                            "answer_markdown": result,
+                            "input": followup_review,
+                            "turn_index": len(history_review) // 2,
+                        },
+                    )
+                    st.session_state["review_followup_counter"] += 1
+                    st.rerun()
 
 
 # ─── Mode C: 個別質問 ──────────────────────────────────
