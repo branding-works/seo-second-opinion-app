@@ -142,7 +142,9 @@ Render ダッシュボード → Environment:
 設定後、自動再デプロイが走り、起動時にテーブル `analyses` が自動作成される。
 
 #### 3. アクセス確認
-- 一般 URL: `https://<your-app>.onrender.com` → 普段通り
+- 一般 URL: `https://<your-app>.onrender.com` → 普段通り(サイドバーでモード切り替え可)
+- 施策レビュー専用 URL: `https://<your-app>.onrender.com/?mode=review` → 施策レビュー固定、モード切り替え非表示
+- 個別質問専用 URL: `https://<your-app>.onrender.com/?mode=ask` → 個別質問固定、モード切り替え非表示
 - 管理者 URL: `https://<your-app>.onrender.com/?admin=secretkey-bw` → ログイン欄が出現
 - パスワード入力後、サイドバー「📊 管理者ダッシュボード」をクリック
 

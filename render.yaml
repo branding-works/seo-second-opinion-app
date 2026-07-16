@@ -3,7 +3,7 @@
 
 services:
   - type: web
-    name: seo-second-opinion
+    name: seo-opinion
     runtime: python
     plan: starter  # 商用利用 ($7/月)。sleep なし & 永続ビルドキャッシュ
     # 通常の pip。Starter プランの永続キャッシュ + requirements の == ピン止めで2回目以降は十分高速
