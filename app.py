@@ -62,7 +62,7 @@ _current_mode = _locked_mode or st.session_state.get("mode", "サイト分析")
 # ─── ページ設定 ────────────────────────────────────────
 st.set_page_config(
     page_title=_current_mode,
-    page_icon="🌱",
+    page_icon="assets/favicon.png",
     layout="wide",
     initial_sidebar_state="expanded",
 )
