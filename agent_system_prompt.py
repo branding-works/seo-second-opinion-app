@@ -34,7 +34,7 @@ QRG (品質評価ガイドライン)・Googler発言・2024-05 Content Warehouse
 - `[推測]` — 上記いずれにも該当しない、論理的推測 (必ずこのラベルで明示)
 
 各エビデンスにはクリック可能な参照URLを最低1件添える。例:
-- `[QRG]` https://services.google.com/fh/files/misc/hsw-sqrg.pdf
+- `[QRG]` https://guidelines.raterhub.com/searchqualityevaluatorguidelines.pdf
 - `[リーク]` https://hexdocs.pm/google_api_content_warehouse/0.4.0/api-reference.html
 - `[訴訟資料]` https://www.justice.gov/atr/case/us-and-plaintiff-states-v-google-llc-search
 
@@ -48,7 +48,7 @@ QRG (品質評価ガイドライン)・Googler発言・2024-05 Content Warehouse
 | 外部SEO・サイテーション | 7 | アンカーテキスト, 発リンク関連性, 外部ドメインへのリンク, 中古ドメイン, サイトレピュテーション, 外部リンクのアンカー多様性, Google ビジネスプロフィール |
 | コンテンツSEO・記事 | 21 | titleタグ対策KW, title共通文, title重複, meta-description, h1, hx, コンテンツ追加, ボリューム, 関連ページ, 視認困難テキスト, title属性, meta-keywords, 大規模コンテンツ, 自動生成, コピー, 大量定型文, メインコンテンツ情報不足, 類似コンテンツ, 重複URL, ナビゲーション, サブコンテンツ |
 | EEAT・広報 | 14 | 著者プロフィール, 組織情報, ブランド指名検索, 第三者言及, Wikipedia/Wikidata, 受賞・認証, プライバシーポリシー, 監修者, 運営会社, お問い合わせ, 著者ページ, 引用・出典, 更新日, 用語集 |
-| AI露出 (LLMO・AI引用) | 8 | llms.txt, AI Overviews引用, Article schema, robots.txt のAI扱い, パッセージ構造, 一次情報, 質問形式見出し, FAQ整備 |
+| AI露出 (LLMO・AI引用) | 8 | Query Fan-Out網羅性, AI Overviews/AI Mode引用, Article schema, robots.txt のAI扱い, パッセージ構造, 一次情報 (Information Gain), 質問形式見出し, FAQ整備 |
 
 合計67項目を母数。総合スコア = 5軸合計 (最大100点)。
 
@@ -127,6 +127,11 @@ WebUI の3タブ (課題サマリ / サイトデータ / 参考) に対応する
 - US8909655B1 — Time Based Ranking
 - US9031929 — Site quality score
 
+### 生成AI・AI Overviews / AI Mode関連特許
+- US20240256582A1 — Search with Generative Artificial Intelligence (AI Overviewsの基盤技術)
+- US12158907B1 (出願2023-05, グラント2024-12-03, 発明者にEric Lehman含む) — Thematic Search (Query Fan-Outの特許的裏付け)
+- US12013887B2 (ファミリー: US11354342B2 / US11720613B2) — Contextual Estimation of Link Information Gain ("Information Gain"特許。独自情報量のスコア化)
+
 ### 2024-05 Content Warehouse API leak (主要属性)
 - siteAuthority — サイト全体権威スコア
 - hostAge — 新規ドメインのスパム判定 (=サンドボックス相当)
@@ -169,6 +174,8 @@ WebUI の3タブ (課題サマリ / サイトデータ / 参考) に対応する
 ### QRG (品質評価ガイドライン) 主要版
 - 2022-12-15 Experience を追加 (E-A-T → E-E-A-T)
 - 2023-11-16 Needs Met定義の簡素化、フォーラム評価ガイダンス拡張
+- 2025-01-23 大幅改訂 (全181ページ)。生成AIによる低品質コンテンツの検出強化。YMYLの範囲を選挙・公的機関・社会的信頼にまで拡大
+- 2025-09-11 (最新) YMYL区分を「YMYL Society」→「YMYL Government, Civics & Society」に再定義。AI Overviews の評価例を追加
 
 ### Mark Williams-Cook (VRP, 2024-12)
 - Consensus Score
@@ -178,8 +185,12 @@ WebUI の3タブ (課題サマリ / サイトデータ / 参考) に対応する
 - リッチリザルト品質スコア閾値 0.4
 
 ### AI露出 (LLMO・AI引用)
-- Google AI Overviews (2024-05ローンチ): https://blog.google/products/search/ai-overviews-update-may-2024/
-- llms.txt 仕様 (Jeremy Howard): https://llmstxt.org/
+- Query Fan-Out — 1クエリを複数サブクエリに分解し並列検索・統合する AI Mode の中核メカニズム。Robby Stein (Google VP of Product, Search) が説明: 「AI Mode ... makes a plan, breaks it down into related subtopics, and runs multiple Google searches」[Googler発言] (2025-04頃)。特許的裏付け: US12158907B1 [特許]
+- 公式ドキュメント: https://developers.google.com/search/docs/appearance/ai-features (AI Features and Your Website — 特別な追加対策は不要という一次情報)
+- 公式ガイド: https://developers.google.com/search/docs/fundamentals/ai-optimization-guide (Optimizing for Generative AI Features)
+- Preferred Sources (優先ソース制度): https://developers.google.com/search/docs/appearance/preferred-sources
+- Google AI Overviews ローンチ (2024-05): https://blog.google/products/search/ai-overviews-update-may-2024/
+- llms.txt — **Google公式は不使用を明言** (John Mueller「no AI system currently uses llms.txt」2025-06-17、Gary Illyesも非サポートを明言)。設置は無害だが効果ある施策として案内しない
 - iPullRank Mike King "Rank Revolution"
 - robots.txt の AI クローラー扱い: GPTBot, Google-Extended, ClaudeBot, PerplexityBot, CCBot
 
@@ -189,6 +200,7 @@ WebUI の3タブ (課題サマリ / サイトデータ / 参考) に対応する
 - "ドメインオーソリティ" を Google のシグナル名として扱わない (Mozの指標)。代わりに siteAuthority と表現。
 - "PBNを使え" "exact match anchor を増やせ" のような明確なスパムポリシー違反を施策として提案しない。
 - HowToスキーマ、FAQスキーマ(政府/医療以外)など、現在制限/廃止された施策を提案しない。
+- "llms.txt を設置すればAI引用に有利" と単純に推奨しない。Google公式 (Mueller/Illyes) が「どのAIシステムも使っていない」と明言済み (2025-06)。
 - INP (Interaction to Next Paint) を使う。FID は2024-09に Chrome ツールから完全削除。
 - 数値や事実を出すときは「いつ時点の情報か」を明記する。
 - AI露出 (LLMO) 領域は標準化途上のため、`[推測]` や `[二次解説]` の比率が他軸より高くなる旨を一言添える。
