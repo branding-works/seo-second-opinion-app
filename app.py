@@ -38,6 +38,57 @@ from admin_ui import (
 import csv_export
 
 
+# ─── サイドバー「参照する資料」: カテゴリ → (表示名, 原本URL) の一覧 ───
+REFERENCE_MATERIALS: list[tuple[str, list[tuple[str, str]]]] = [
+    ("Google特許", [
+        ("US6285999 — Original PageRank (Page, Brin, 1999)", "https://patents.google.com/patent/US6285999B1/en"),
+        ("US7716225B1 — Reasonable Surfer Model (Brin, Henzinger)", "https://patents.google.com/patent/US7716225B1/en"),
+        ("US7346839B2 — Information Retrieval Based on Historical Data", "https://patents.google.com/patent/US7346839B2/en"),
+        ("US8396865B1 — Sharing user-submitted data (E-A-T 早期実装)", "https://patents.google.com/patent/US8396865B1/en"),
+        ("US8244722B1 — Ranking documents based on user behavior", "https://patents.google.com/patent/US8244722B1/en"),
+        ("US9183296 — Site quality score / NavBoost", "https://patents.google.com/patent/US9183296B1/en"),
+        ("US8909655B1 — Time Based Ranking", "https://patents.google.com/patent/US8909655B1/en"),
+        ("US9031929 — Site quality score", "https://patents.google.com/patent/US9031929B1/en"),
+        ("US20240256582A1 — Search with Generative Artificial Intelligence", "https://patents.google.com/patent/US20240256582A1/en"),
+        ("US12158907B1 — Thematic Search (Query Fan-Out の特許的裏付け)", "https://patents.google.com/patent/US12158907B1/en"),
+        ("US12013887B2 — Contextual Estimation of Link Information Gain", "https://patents.google.com/patent/US12013887B2/en"),
+    ]),
+    ("2024-05 リーク資料", [
+        ("Content Warehouse API リファレンス (hexdocs mirror)", "https://hexdocs.pm/google_api_content_warehouse/0.4.0/api-reference.html"),
+        ("iPullRank Mike King『Secrets from the Google Algorithm Leak』", "https://ipullrank.com/google-algo-leak"),
+        ("SparkToro Rand Fishkin『An Anonymous Source Shared...』", "https://sparktoro.com/blog/an-anonymous-source-shared-thousands-of-leaked-google-search-api-documents-with-me-everyone-in-seo-should-see-them/"),
+    ]),
+    ("DOJ訴訟資料", [
+        ("United States v. Google LLC (Case 1:20-cv-03010) 公式資料", "https://www.justice.gov/atr/case/us-and-plaintiff-states-v-google-llc-search"),
+    ]),
+    ("品質評価ガイドライン (QRG)", [
+        ("Search Quality Rater Guidelines 公式フルPDF (2025-09-11版)", "https://guidelines.raterhub.com/searchqualityevaluatorguidelines.pdf"),
+        ("2023-11 改訂の公式アナウンス", "https://developers.google.com/search/blog/2023/11/search-quality-rater-guidelines-update"),
+    ]),
+    ("Mark Williams-Cook (VRP)", [
+        ("Candour『Google exploit data discussion』(開示元本人による解説)", "https://withcandour.co.uk/blog/google-exploit-data-discussion"),
+    ]),
+    ("Search Central Blog", [
+        ("Search Central Blog トップ", "https://developers.google.com/search/blog"),
+        ("AI Overviews ローンチ (2024-05)", "https://blog.google/products/search/ai-overviews-update-may-2024/"),
+        ("Succeeding in AI Search (2025-05)", "https://developers.google.com/search/blog/2025/05/succeeding-in-ai-search"),
+        ("Search Console AI設定機能 (2025-12)", "https://developers.google.com/search/blog/2025/12/ai-powered-configuration"),
+        ("生成AIパフォーマンスレポート (2026-06)", "https://developers.google.com/search/blog/2026/06/gen-ai-performance-reports"),
+    ]),
+    ("Search Central ドキュメント", [
+        ("Search Central ドキュメントトップ", "https://developers.google.com/search/docs?hl=ja"),
+        ("AI Features and Your Website", "https://developers.google.com/search/docs/appearance/ai-features"),
+        ("Optimizing for Generative AI Features", "https://developers.google.com/search/docs/fundamentals/ai-optimization-guide"),
+        ("Preferred Sources (優先ソース制度)", "https://developers.google.com/search/docs/appearance/preferred-sources"),
+        ("Creating Helpful, Reliable, People-First Content", "https://developers.google.com/search/docs/fundamentals/creating-helpful-content"),
+    ]),
+    ("Search Central サポート", [
+        ("Google SEO Help and Support", "https://developers.google.com/search/help"),
+        ("Search Central Community (フォーラム)", "https://support.google.com/webmasters/community?hl=ja"),
+    ]),
+]
+
+
 # DB 初期化 (プロセスにつき1回だけ。Streamlit再実行のたびに Neon 接続するのを防ぐ)
 @st.cache_resource(show_spinner=False)
 def _init_db_once() -> bool:
@@ -416,15 +467,12 @@ with st.sidebar:
 
     st.divider()
 
-    with st.expander("参照する資料", expanded=False):
-        st.checkbox("Google特許", value=True)
-        st.checkbox("2024-05 リーク資料", value=True)
-        st.checkbox("DOJ訴訟資料", value=True)
-        st.checkbox("品質評価ガイドライン (QRG)", value=True)
-        st.checkbox("Mark Williams-Cook (VRP)", value=True)
-        st.checkbox("Search Central Blog", value=True)
-        st.checkbox("Search Central ドキュメント", value=True)
-        st.checkbox("Search Central サポート", value=True)
+    st.markdown("**参照する資料**")
+    for _category, _items in REFERENCE_MATERIALS:
+        with st.expander(_category, expanded=False):
+            st.markdown(
+                "\n".join(f"- {label} [↗]({url})" for label, url in _items)
+            )
 
     button_label = {
         "サイト分析": "分析を実行",
