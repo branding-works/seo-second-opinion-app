@@ -549,6 +549,31 @@ def render_ai_chat_header() -> None:
     )
 
 
+def render_user_chat_header() -> None:
+    """ユーザー発言のヘッダー(会話継続表示で使用)。"""
+    st.markdown(
+        f"""
+<div class="chat-msg">
+    <div class="chat-avatar chat-avatar-user">U</div>
+    <div>
+        <span class="chat-name">あなた</span><span class="chat-time">{datetime.now().strftime('%Y-%m-%d %H:%M')}</span>
+    </div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+
+def render_chat_history(history: list[dict]) -> None:
+    """会話履歴(role/content形式のリスト)を全ターン分、上から順に表示する。"""
+    for turn in history:
+        if turn["role"] == "user":
+            render_user_chat_header()
+        else:
+            render_ai_chat_header()
+        st.markdown(turn["content"])
+
+
 def save_log_silently(**kwargs) -> None:
     """分析ログの DB 保存。失敗してもユーザー体験を止めない(既存仕様)。"""
     try:
