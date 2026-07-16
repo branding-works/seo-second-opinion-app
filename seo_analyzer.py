@@ -659,16 +659,20 @@ def analyze_site_structured(
     return result
 
 
-def review_strategy(strategy_text: str, related_url: str = "") -> str:
-    """Mode B: 施策レビュー。"""
-    if is_mock_mode():
-        return _mock_review_response()
+def review_strategy(strategy_text: str, related_url: str = "", history: list[dict] | None = None) -> tuple[str, str]:
+    """Mode B: 施策レビュー。
 
-    client = get_client()
-    if client is None:
-        return "❌ ANTHROPIC_API_KEY が設定されていません。"
+    history が空(初回)なら整形済みプロンプトを送信し、
+    2ターン目以降は strategy_text をそのまま追加の発言として送信する。
 
-    user_message = f"""モード: B (施策レビュー)
+    戻り値: (回答テキスト, 実際にAPIへ送信したuserメッセージ本文)
+    """
+    history = history or []
+
+    if history:
+        user_message = strategy_text
+    else:
+        user_message = f"""モード: B (施策レビュー)
 {f'関連URL: {related_url}' if related_url else ''}
 
 レビュー対象の施策案:
@@ -682,25 +686,36 @@ def review_strategy(strategy_text: str, related_url: str = "") -> str:
 
 施策レビューを実行してください。"""
 
+    if is_mock_mode():
+        return _mock_review_response(), user_message
+
+    client = get_client()
+    if client is None:
+        return "❌ ANTHROPIC_API_KEY が設定されていません。", user_message
+
     response = client.messages.create(
         model=get_model(),
         max_tokens=4000,
         system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
-        messages=[{"role": "user", "content": user_message}],
+        messages=history + [{"role": "user", "content": user_message}],
     )
-    return response.content[0].text
+    return response.content[0].text, user_message
 
 
-def answer_question(question: str) -> str:
-    """Mode C: 個別質問。"""
-    if is_mock_mode():
-        return _mock_question_response()
+def answer_question(question: str, history: list[dict] | None = None) -> tuple[str, str]:
+    """Mode C: 個別質問。
 
-    client = get_client()
-    if client is None:
-        return "❌ ANTHROPIC_API_KEY が設定されていません。"
+    history が空(初回)なら整形済みプロンプトを送信し、
+    2ターン目以降は question をそのまま追加の発言として送信する。
 
-    user_message = f"""モード: C (個別質問)
+    戻り値: (回答テキスト, 実際にAPIへ送信したuserメッセージ本文)
+    """
+    history = history or []
+
+    if history:
+        user_message = question
+    else:
+        user_message = f"""モード: C (個別質問)
 
 質問:
 {question}
@@ -712,13 +727,20 @@ def answer_question(question: str) -> str:
 
 質問に回答してください。"""
 
+    if is_mock_mode():
+        return _mock_question_response(), user_message
+
+    client = get_client()
+    if client is None:
+        return "❌ ANTHROPIC_API_KEY が設定されていません。", user_message
+
     response = client.messages.create(
         model=get_model(),
         max_tokens=4000,
         system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
-        messages=[{"role": "user", "content": user_message}],
+        messages=history + [{"role": "user", "content": user_message}],
     )
-    return response.content[0].text
+    return response.content[0].text, user_message
 
 
 # ─── Structured mock data (UI binding 用) ────────────────────

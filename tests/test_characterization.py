@@ -173,3 +173,43 @@ def test_database_sqlite_roundtrip(tmp_path, monkeypatch):
     assert rows[0]["full_result"] == {"k": "v"}
     one = database.get_analysis(new_id)
     assert one["mode"] == "サイト分析"
+
+
+# ─── seo_analyzer: 会話継続(履歴付き呼び出し) ───────────────
+
+def test_answer_question_first_turn_builds_formatted_prompt():
+    from seo_analyzer import answer_question
+    answer, sent_message = answer_question("ドメインオーソリティは本当に使われていませんか?")
+    assert answer  # mockモードなので固定文字列が返る
+    assert "モード: C" in sent_message  # 初回は整形済みプロンプトが送信される
+    assert "ドメインオーソリティは本当に使われていませんか?" in sent_message
+
+
+def test_answer_question_follow_up_sends_raw_question_only():
+    from seo_analyzer import answer_question
+    history = [
+        {"role": "user", "content": "モード: C (個別質問)\n\n質問:\n初めの質問\n\n..."},
+        {"role": "assistant", "content": "前回の回答"},
+    ]
+    answer, sent_message = answer_question("では根拠となる特許番号は?", history=history)
+    assert answer
+    assert sent_message == "では根拠となる特許番号は?"  # 2ターン目以降は整形しない
+
+
+def test_review_strategy_first_turn_builds_formatted_prompt():
+    from seo_analyzer import review_strategy
+    answer, sent_message = review_strategy("FAQPage schemaを全ページに入れる")
+    assert answer
+    assert "モード: B" in sent_message
+    assert "FAQPage schemaを全ページに入れる" in sent_message
+
+
+def test_review_strategy_follow_up_sends_raw_text_only():
+    from seo_analyzer import review_strategy
+    history = [
+        {"role": "user", "content": "モード: B (施策レビュー)\n\nレビュー対象の施策案:\n初回の施策案\n\n..."},
+        {"role": "assistant", "content": "前回の評価"},
+    ]
+    answer, sent_message = review_strategy("2番目の案について詳しく", history=history)
+    assert answer
+    assert sent_message == "2番目の案について詳しく"
