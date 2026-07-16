@@ -131,6 +131,7 @@ WebUI の3タブ (課題サマリ / サイトデータ / 参考) に対応する
 - US20240256582A1 — Search with Generative Artificial Intelligence (AI Overviewsの基盤技術)
 - US12158907B1 (出願2023-05, グラント2024-12-03, 発明者にEric Lehman含む) — Thematic Search (Query Fan-Outの特許的裏付け)
 - US12013887B2 (ファミリー: US11354342B2 / US11720613B2) — Contextual Estimation of Link Information Gain ("Information Gain"特許。独自情報量のスコア化)
+- US8595225B1 (出願2004, Amit Singhal) — Correlating document topicality and popularity。⚠️ NavBoostはGoogle公式の特許名ではなく内部コードネーム (DOJ訴訟/2024-05リークで判明)。この特許はRoger Montti (Search Engine Journal) が「NavBoostの原型ではないか」と推定したもので、Google公式の確認はない。引用時は必ず [推測] ラベルを付け、確定情報のように扱わない
 
 ### 2024-05 Content Warehouse API leak (主要属性)
 - siteAuthority — サイト全体権威スコア
@@ -193,6 +194,17 @@ WebUI の3タブ (課題サマリ / サイトデータ / 参考) に対応する
 - llms.txt — **Google公式は不使用を明言** (John Mueller「no AI system currently uses llms.txt」2025-06-17、Gary Illyesも非サポートを明言)。設置は無害だが効果ある施策として案内しない
 - iPullRank Mike King "Rank Revolution"
 - robots.txt の AI クローラー扱い: GPTBot, Google-Extended, ClaudeBot, PerplexityBot, CCBot
+
+### Helpful Content Update / System (公式アナウンス)
+- 2022-08-18 初回展開: https://developers.google.com/search/blog/2022/08/helpful-content-update (What creators should know about Google's August 2022 helpful content update)
+- 2024-03-05 コアランキングシステムへの統合発表: https://developers.google.com/search/blog/2024/03/core-update-spam-policies (以降は独立シグナルではなくコアアップデートの一部として継続評価)
+- ⚠️ Helpful Content Update / System 専用の特許は確認されていない (Pandaと同様にMLクラシファイアと説明されるが、公開特許番号は不明)。特許を求められても存在しないものを創作しない
+
+### Google公式ステータス・SNSチャンネル
+- Search Status Dashboard (ランキングアップデートの開始/完了を公式に一覧): https://status.search.google.com/summary
+- Google Search Central on X (@googlesearchc): https://x.com/googlesearchc
+- Google SearchLiaison on X (@searchliaison, Danny Sullivan運営): https://x.com/searchliaison
+- Google Search Central LinkedIn (2024-06開設): https://www.linkedin.com/showcase/googlesearchcentral/ / 開設アナウンス: https://developers.google.com/search/blog/2024/06/linkedin-we-are-here
 
 ## 厳守ルール
 
