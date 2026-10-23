@@ -66,6 +66,8 @@ REFERENCE_MATERIALS: list[tuple[str, list[tuple[str, str, str]]]] = [
          "ユーザーが既に見たページにない新しい情報の量 (Information Gain) をスコア化する仕組み。コンテンツの独自性評価の根拠"),
         ("US8595225B1 — Correlating document topicality and popularity (NavBoostの原型候補)", "https://patents.google.com/patent/US8595225B1/en",
          "⚠️ NavBoost自体はGoogleが命名した公式特許名ではなく、DOJ訴訟・2024-05リークで明らかになった内部コードネーム。この特許はRoger Montti (Search Engine Journal) が『NavBoostの原型ではないか』と推定したもので、Google公式には未確認 [推測]"),
+        ("US12536233B1 — AI-generated content page tailored to a specific user", "https://patents.google.com/patent/US12536233B1/en",
+         "検索結果ページ上の組織のランディングページスコアが一定の閾値条件を満たした場合に、機械学習モデルがクエリと文脈情報からAI生成ページを作成し、そのページへのナビゲーションリンクに差し替える仕組みを記述した特許 (出願2025-01-03、優先権出願2024-07-25、グラント2026-01-27)。⚠️ 閾値が『スコアを超えた場合』『スコアを下回った場合』のどちらで発動するかは報道・解説記事間で解釈が分かれており (例ではECサイトのランディングページ低評価時の差し替えを想定する解説が多い)、クレーム原文の確定的な読み方・Google公式のコメントはいずれも取れていない。引用時は閾値の方向性を確定情報として扱わない [特許]"),
     ]),
     ("2024-05 リーク資料", [
         ("Content Warehouse API リファレンス (hexdocs mirror)", "https://hexdocs.pm/google_api_content_warehouse/0.4.0/api-reference.html",
@@ -104,6 +106,10 @@ REFERENCE_MATERIALS: list[tuple[str, list[tuple[str, str, str]]]] = [
          "Helpful Content Update (ユーザー第一でないコンテンツを抑制する仕組み) の初回展開を発表した公式記事"),
         ("What web creators should know about our March 2024 core update and new spam policies", "https://developers.google.com/search/blog/2024/03/core-update-spam-policies",
          "Helpful Content System が独立した仕組みからコアランキングシステムに統合されたことを発表した公式記事"),
+        ("Introducing a new spam policy for \"back button hijacking\" (2026-04)", "https://developers.google.com/search/blog/2026/04/back-button-hijacking",
+         "ブラウザの『戻る』ボタン操作を妨害する実装を spam policies の malicious practices 違反として新たに明文化した公式発表。施行開始は2026-06-15、サイト所有者は自社コードだけでなく広告タグ等サードパーティ由来の実装にも責任を負うと明記"),
+        ("AI Mode and AI Overviews updates to explore the web (2026-10)", "https://blog.google/products-and-platforms/products/search/updates-ai-mode-overviews-explore-web/",
+         "AI Mode / AI Overviews でのインラインリンク表示の継続的な増加、回答上部での『最も直接的に完了できるサイト』テスト表示、Preferred Sources 利用拡大 (年初比7倍超) 等を発表した Google 公式ブログ記事"),
     ]),
     ("Search Central ドキュメント", [
         ("Search Central ドキュメントトップ", "https://developers.google.com/search/docs?hl=ja",
