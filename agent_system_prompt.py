@@ -132,6 +132,7 @@ WebUI の3タブ (課題サマリ / サイトデータ / 参考) に対応する
 - US12158907B1 (出願2023-05, グラント2024-12-03, 発明者にEric Lehman含む) — Thematic Search (Query Fan-Outの特許的裏付け)
 - US12013887B2 (ファミリー: US11354342B2 / US11720613B2) — Contextual Estimation of Link Information Gain ("Information Gain"特許。独自情報量のスコア化)
 - US8595225B1 (出願2004, Amit Singhal) — Correlating document topicality and popularity。⚠️ NavBoostはGoogle公式の特許名ではなく内部コードネーム (DOJ訴訟/2024-05リークで判明)。この特許はRoger Montti (Search Engine Journal) が「NavBoostの原型ではないか」と推定したもので、Google公式の確認はない。引用時は必ず [推測] ラベルを付け、確定情報のように扱わない
+- US12536233B1 (出願2025-01-03, 優先権出願2024-07-25, グラント2026-01-27) — AI-generated content page tailored to a specific user。検索結果ページ上の組織のランディングページスコアが一定の閾値条件を満たした場合に、機械学習モデルがクエリと文脈情報からAI生成ページを作成し、そのページへのナビゲーションリンクに差し替える仕組みを記述。⚠️ 閾値が「スコアを超えた場合」「スコアを下回った場合」のどちらで発動するかは報道・解説記事間で解釈が分かれている (低評価時の差し替えを想定する解説が多いが、クレーム原文の確定的な読み方は取れていない)。Google公式のコメントもないため、引用時は閾値の方向性を確定情報として扱わない
 
 ### 2024-05 Content Warehouse API leak (主要属性)
 - siteAuthority — サイト全体権威スコア
@@ -194,11 +195,15 @@ WebUI の3タブ (課題サマリ / サイトデータ / 参考) に対応する
 - llms.txt — **Google公式は不使用を明言** (John Mueller「no AI system currently uses llms.txt」2025-06-17、Gary Illyesも非サポートを明言)。設置は無害だが効果ある施策として案内しない
 - iPullRank Mike King "Rank Revolution"
 - robots.txt の AI クローラー扱い: GPTBot, Google-Extended, ClaudeBot, PerplexityBot, CCBot
+- AI Mode and AI Overviews updates to explore the web (2026-10, 公式ブログ): https://blog.google/products-and-platforms/products/search/updates-ai-mode-overviews-explore-web/ — インラインリンク表示の継続的な増加、回答上部での「最も直接的に完了できるサイト」のテスト表示 (理由の文脈付き)、Preferred Sources 利用拡大 (年初比7倍超) を発表。Search Console の AI 経由クリックデータは依然非公開で、今後指標を追加予定とGoogleは述べている
 
 ### Helpful Content Update / System (公式アナウンス)
 - 2022-08-18 初回展開: https://developers.google.com/search/blog/2022/08/helpful-content-update (What creators should know about Google's August 2022 helpful content update)
 - 2024-03-05 コアランキングシステムへの統合発表: https://developers.google.com/search/blog/2024/03/core-update-spam-policies (以降は独立シグナルではなくコアアップデートの一部として継続評価)
 - ⚠️ Helpful Content Update / System 専用の特許は確認されていない (Pandaと同様にMLクラシファイアと説明されるが、公開特許番号は不明)。特許を求められても存在しないものを創作しない
+
+### スパムポリシー追加 (2026)
+- Back button hijacking のスパムポリシー明文化 (2026-04-13公式発表): https://developers.google.com/search/blog/2026/04/back-button-hijacking — ブラウザの「戻る」操作を妨害する実装を malicious practices 違反として追加。施行開始2026-06-15。サイト所有者は自社コードだけでなく広告タグ等サードパーティ由来の実装にも責任を負うと明記されている
 
 ### Google公式ステータス・SNSチャンネル
 - Search Status Dashboard (ランキングアップデートの開始/完了を公式に一覧): https://status.search.google.com/summary
