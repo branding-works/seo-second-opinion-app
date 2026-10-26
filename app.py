@@ -110,6 +110,8 @@ REFERENCE_MATERIALS: list[tuple[str, list[tuple[str, str, str]]]] = [
          "ブラウザの『戻る』ボタン操作を妨害する実装を spam policies の malicious practices 違反として新たに明文化した公式発表。施行開始は2026-06-15、サイト所有者は自社コードだけでなく広告タグ等サードパーティ由来の実装にも責任を負うと明記"),
         ("AI Mode and AI Overviews updates to explore the web (2026-10)", "https://blog.google/products-and-platforms/products/search/updates-ai-mode-overviews-explore-web/",
          "AI Mode / AI Overviews でのインラインリンク表示の継続的な増加、回答上部での『最も直接的に完了できるサイト』テスト表示、Preferred Sources 利用拡大 (年初比7倍超) 等を発表した Google 公式ブログ記事"),
+        ("Update to the Site Reputation Policy (2026-08)", "https://developers.google.com/search/blog/2026/08/update-site-reputation-policy",
+         "2024-11公表のSite Reputation Abuse (寄生SEO) ポリシーについて、欧州委員会との協議を踏まえEEA (欧州経済領域) 向けの運用を変更した公式発表 (2026-08-28発表、施行2026-08-30)。ポリシーの定義自体は変更なし。EEA外では従来通りマニュアルアクションが該当セクションの検索結果に直接影響するが、EEA内ではマニュアルアクションの影響が検索結果に及ばず、該当セクションをシステム上分離し将来的に独立してランキングされるようにする仕組みに変わる"),
     ]),
     ("Search Central ドキュメント", [
         ("Search Central ドキュメントトップ", "https://developers.google.com/search/docs?hl=ja",

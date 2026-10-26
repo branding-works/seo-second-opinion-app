@@ -204,6 +204,7 @@ WebUI の3タブ (課題サマリ / サイトデータ / 参考) に対応する
 
 ### スパムポリシー追加 (2026)
 - Back button hijacking のスパムポリシー明文化 (2026-04-13公式発表): https://developers.google.com/search/blog/2026/04/back-button-hijacking — ブラウザの「戻る」操作を妨害する実装を malicious practices 違反として追加。施行開始2026-06-15。サイト所有者は自社コードだけでなく広告タグ等サードパーティ由来の実装にも責任を負うと明記されている
+- Site Reputation Abuse (寄生SEO) ポリシーのEEA向け運用変更 (2026-08-28公式発表、施行2026-08-30): https://developers.google.com/search/blog/2026/08/update-site-reputation-policy — ポリシー定義自体 (2024-11公表) は変更なし。EEA外は従来通りマニュアルアクションが該当セクションの検索結果に直接影響するが、EEA内はマニュアルアクションの影響が検索結果に及ばず、該当セクションをシステム上分離し将来的に独立してランキングする仕組みに変更。欧州委員会との協議を踏まえた措置
 
 ### Google公式ステータス・SNSチャンネル
 - Search Status Dashboard (ランキングアップデートの開始/完了を公式に一覧): https://status.search.google.com/summary
