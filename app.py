@@ -110,6 +110,12 @@ REFERENCE_MATERIALS: list[tuple[str, list[tuple[str, str, str]]]] = [
          "ブラウザの『戻る』ボタン操作を妨害する実装を spam policies の malicious practices 違反として新たに明文化した公式発表。施行開始は2026-06-15、サイト所有者は自社コードだけでなく広告タグ等サードパーティ由来の実装にも責任を負うと明記"),
         ("AI Mode and AI Overviews updates to explore the web (2026-10)", "https://blog.google/products-and-platforms/products/search/updates-ai-mode-overviews-explore-web/",
          "AI Mode / AI Overviews でのインラインリンク表示の継続的な増加、回答上部での『最も直接的に完了できるサイト』テスト表示、Preferred Sources 利用拡大 (年初比7倍超) 等を発表した Google 公式ブログ記事"),
+        ("Update to the Site Reputation Policy (2026-08)", "https://developers.google.com/search/blog/2026/08/update-site-reputation-policy",
+         "サイトレピュテーション濫用 (第三者コンテンツへの看板借り) ポリシーの運用変更を発表した公式記事。欧州委員会との協議を踏まえ、2026-08-30以降はEEA域内向け検索結果に対してはマニュアルアクションによる順位への影響を適用しない一方、EEA域外では該当セクションを分離評価する従来運用を継続すると明記している"),
+        ("Announcing web multimodal Search performance reporting in Search Console (2026-09)", "https://developers.google.com/search/blog/2026/09/web-multimodal-in-sc",
+         "Google Lens・Circle to Search・画像アップロード検索・Chromeの『この画像を検索』経由の流入を、Search Consoleのパフォーマンスレポート (Web) で『テキストベース』『マルチモーダル』のフィルタとして分離計測できるようになったことを発表した公式記事"),
+        ("Supporting a shared AI training control for websites (2026-10)", "https://developers.google.com/search/blog/2026/10/ai-training-control",
+         "IETF AIPREFワーキンググループの仕様に基づき、robots.txt内の単一ポリシートークンでAI学習利用の許諾を複数のAI事業者へ一括指定できる共通のAI学習制御の採用方針をJohn Muellerが発表した公式記事。既存のGoogle-Extendedは従来通り別個に維持され、Googleの対応開始目標は2027年"),
     ]),
     ("Search Central ドキュメント", [
         ("Search Central ドキュメントトップ", "https://developers.google.com/search/docs?hl=ja",
