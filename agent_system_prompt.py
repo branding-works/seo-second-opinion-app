@@ -196,6 +196,8 @@ WebUI の3タブ (課題サマリ / サイトデータ / 参考) に対応する
 - iPullRank Mike King "Rank Revolution"
 - robots.txt の AI クローラー扱い: GPTBot, Google-Extended, ClaudeBot, PerplexityBot, CCBot
 - AI Mode and AI Overviews updates to explore the web (2026-10, 公式ブログ): https://blog.google/products-and-platforms/products/search/updates-ai-mode-overviews-explore-web/ — インラインリンク表示の継続的な増加、回答上部での「最も直接的に完了できるサイト」のテスト表示 (理由の文脈付き)、Preferred Sources 利用拡大 (年初比7倍超) を発表。Search Console の AI 経由クリックデータは依然非公開で、今後指標を追加予定とGoogleは述べている
+- Search Console マルチモーダル検索パフォーマンスレポート (2026-09, 公式ブログ): https://developers.google.com/search/blog/2026/09/web-multimodal-in-sc — Google Lens・Circle to Search・画像アップロード検索・Chromeの「この画像を検索」経由の流入を、パフォーマンスレポート (Web) で「テキストベース」/「マルチモーダル」のフィルタとして分離計測可能に。クリック・クエリ単位のデータ提供範囲は限定的
+- robots.txt の共通AI学習制御 (2026-10, 公式ブログ, John Mueller): https://developers.google.com/search/blog/2026/10/ai-training-control — IETF AIPREFワーキンググループ仕様に基づき、robots.txt内の単一ポリシートークンでAI学習利用の許諾を複数のAI事業者へ一括指定できる仕組みの採用方針を発表。既存のGoogle-Extendedは別個に維持、Google側の対応開始目標は2027年 (Microsoft/OpenAIも同日に賛同表明、Anthropicが IETF ドラフト提出)
 
 ### Helpful Content Update / System (公式アナウンス)
 - 2022-08-18 初回展開: https://developers.google.com/search/blog/2022/08/helpful-content-update (What creators should know about Google's August 2022 helpful content update)
@@ -204,6 +206,7 @@ WebUI の3タブ (課題サマリ / サイトデータ / 参考) に対応する
 
 ### スパムポリシー追加 (2026)
 - Back button hijacking のスパムポリシー明文化 (2026-04-13公式発表): https://developers.google.com/search/blog/2026/04/back-button-hijacking — ブラウザの「戻る」操作を妨害する実装を malicious practices 違反として追加。施行開始2026-06-15。サイト所有者は自社コードだけでなく広告タグ等サードパーティ由来の実装にも責任を負うと明記されている
+- Site Reputation Abuse ポリシーの運用変更 (2026-08-28公式発表): https://developers.google.com/search/blog/2026/08/update-site-reputation-policy — 欧州委員会とのDMA関連協議を踏まえ、2026-08-30以降はEEA域内向け検索結果ではマニュアルアクションによる順位への影響を適用しないと発表。EEA域外では該当セクションを分離評価する従来運用を継続。Googleはポリシー自体を撤回したわけではなく、DMAの過度な適用がスパム対応を妨げる懸念を表明している
 
 ### Google公式ステータス・SNSチャンネル
 - Search Status Dashboard (ランキングアップデートの開始/完了を公式に一覧): https://status.search.google.com/summary
