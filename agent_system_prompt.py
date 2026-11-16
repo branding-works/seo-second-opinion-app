@@ -126,11 +126,13 @@ WebUI の3タブ (課題サマリ / サイトデータ / 参考) に対応する
 - US9183296 / US9165040 — Site quality / NavBoost
 - US8909655B1 — Time Based Ranking
 - US9031929 — Site quality score
+- US9002832B1 (出願2012, グラント2015) — Classifying sites as low quality sites。リンク品質スコアがしきい値を下回るサイトを低品質と分類し、ランキングスコアを引き下げる仕組み
 
 ### 生成AI・AI Overviews / AI Mode関連特許
 - US20240256582A1 — Search with Generative Artificial Intelligence (AI Overviewsの基盤技術)
 - US12158907B1 (出願2023-05, グラント2024-12-03, 発明者にEric Lehman含む) — Thematic Search (Query Fan-Outの特許的裏付け)
 - US12013887B2 (ファミリー: US11354342B2 / US11720613B2) — Contextual Estimation of Link Information Gain ("Information Gain"特許。独自情報量のスコア化)
+- US12265560B2 (出願2023-04-28, グラント2025-04-01, 発明者 Vladimir Vuskovic / Joseph Lange / Behshad Behzadi / Marcin M. Nowak-Przygodzki) — Subquery generation from a query。複合クエリを複数サブクエリの候補集合に分解し品質スコアで評価のうえ実行する仕組み。US12158907B1 (Thematic Search) と並ぶQuery Fan-Outのもう一つの特許的裏付け
 - US8595225B1 (出願2004, Amit Singhal) — Correlating document topicality and popularity。⚠️ NavBoostはGoogle公式の特許名ではなく内部コードネーム (DOJ訴訟/2024-05リークで判明)。この特許はRoger Montti (Search Engine Journal) が「NavBoostの原型ではないか」と推定したもので、Google公式の確認はない。引用時は必ず [推測] ラベルを付け、確定情報のように扱わない
 - US12536233B1 (出願2025-01-03, 優先権出願2024-07-25, グラント2026-01-27) — AI-generated content page tailored to a specific user。検索結果ページ上の組織のランディングページスコアが一定の閾値条件を満たした場合に、機械学習モデルがクエリと文脈情報からAI生成ページを作成し、そのページへのナビゲーションリンクに差し替える仕組みを記述。⚠️ 閾値が「スコアを超えた場合」「スコアを下回った場合」のどちらで発動するかは報道・解説記事間で解釈が分かれている (低評価時の差し替えを想定する解説が多いが、クレーム原文の確定的な読み方は取れていない)。Google公式のコメントもないため、引用時は閾値の方向性を確定情報として扱わない
 
@@ -196,6 +198,8 @@ WebUI の3タブ (課題サマリ / サイトデータ / 参考) に対応する
 - iPullRank Mike King "Rank Revolution"
 - robots.txt の AI クローラー扱い: GPTBot, Google-Extended, ClaudeBot, PerplexityBot, CCBot
 - AI Mode and AI Overviews updates to explore the web (2026-10, 公式ブログ): https://blog.google/products-and-platforms/products/search/updates-ai-mode-overviews-explore-web/ — インラインリンク表示の継続的な増加、回答上部での「最も直接的に完了できるサイト」のテスト表示 (理由の文脈付き)、Preferred Sources 利用拡大 (年初比7倍超) を発表。Search Console の AI 経由クリックデータは依然非公開で、今後指標を追加予定とGoogleは述べている
+- A new resource for optimizing for generative AI in Google Search (2026-05-15, 公式ブログ): https://developers.google.com/search/blog/2026/05/a-new-resource-for-optimizing — 生成AI検索向け最適化ガイドの公開を発表。「生成AI検索向けの最適化は特別なGEO/AEO施策ではなく通常のSEOの延長である」というメッセージを明示
+- Google Search's Guidance on Generative AI Content on Your Website (公式): https://developers.google.com/search/docs/fundamentals/using-gen-ai-content — AI生成コンテンツそのものではなく人的レビュー・E-E-A-Tの有無を問題にするという公式スタンス。⚠️ 2026-10頃、公開前に人の手で事実確認・レビューを行うよう強く求める文言が追加されたと複数の二次ソースが報告しているが、Google公式の改定履歴表示でのこの日付自体の確認は取れていない
 
 ### Helpful Content Update / System (公式アナウンス)
 - 2022-08-18 初回展開: https://developers.google.com/search/blog/2022/08/helpful-content-update (What creators should know about Google's August 2022 helpful content update)
