@@ -68,6 +68,10 @@ REFERENCE_MATERIALS: list[tuple[str, list[tuple[str, str, str]]]] = [
          "⚠️ NavBoost自体はGoogleが命名した公式特許名ではなく、DOJ訴訟・2024-05リークで明らかになった内部コードネーム。この特許はRoger Montti (Search Engine Journal) が『NavBoostの原型ではないか』と推定したもので、Google公式には未確認 [推測]"),
         ("US12536233B1 — AI-generated content page tailored to a specific user", "https://patents.google.com/patent/US12536233B1/en",
          "検索結果ページ上の組織のランディングページスコアが一定の閾値条件を満たした場合に、機械学習モデルがクエリと文脈情報からAI生成ページを作成し、そのページへのナビゲーションリンクに差し替える仕組みを記述した特許 (出願2025-01-03、優先権出願2024-07-25、グラント2026-01-27)。⚠️ 閾値が『スコアを超えた場合』『スコアを下回った場合』のどちらで発動するかは報道・解説記事間で解釈が分かれており (例ではECサイトのランディングページ低評価時の差し替えを想定する解説が多い)、クレーム原文の確定的な読み方・Google公式のコメントはいずれも取れていない。引用時は閾値の方向性を確定情報として扱わない [特許]"),
+        ("US9002832B1 — Classifying sites as low quality sites", "https://patents.google.com/patent/US9002832B1/en",
+         "サイト内のリンクを品質スコアでランク付けし、そのスコアがしきい値を下回るサイトを『低品質サイト』と分類してランキングスコアを引き下げる仕組みを記述した特許 (出願2012、グラント2015)。被リンク品質によるサイト全体の降格という考え方の古典的な根拠とされる"),
+        ("US12265560B2 — Subquery generation from a query", "https://patents.google.com/patent/US12265560B2/en",
+         "複合的なクエリを複数のサブクエリの候補集合に分解し、品質スコアで評価したうえで、しきい値を満たす集合を実行して回答をまとめる仕組みを記述した特許 (出願2023-04-28、グラント2025-04-01、発明者 Vladimir Vuskovic / Joseph Lange / Behshad Behzadi / Marcin M. Nowak-Przygodzki、Google LLC)。US12158907B1 (Thematic Search) と並ぶ、AI Modeの『Query Fan-Out』のもう一つの特許的裏付けとされる"),
     ]),
     ("2024-05 リーク資料", [
         ("Content Warehouse API リファレンス (hexdocs mirror)", "https://hexdocs.pm/google_api_content_warehouse/0.4.0/api-reference.html",
@@ -110,6 +114,8 @@ REFERENCE_MATERIALS: list[tuple[str, list[tuple[str, str, str]]]] = [
          "ブラウザの『戻る』ボタン操作を妨害する実装を spam policies の malicious practices 違反として新たに明文化した公式発表。施行開始は2026-06-15、サイト所有者は自社コードだけでなく広告タグ等サードパーティ由来の実装にも責任を負うと明記"),
         ("AI Mode and AI Overviews updates to explore the web (2026-10)", "https://blog.google/products-and-platforms/products/search/updates-ai-mode-overviews-explore-web/",
          "AI Mode / AI Overviews でのインラインリンク表示の継続的な増加、回答上部での『最も直接的に完了できるサイト』テスト表示、Preferred Sources 利用拡大 (年初比7倍超) 等を発表した Google 公式ブログ記事"),
+        ("A new resource for optimizing for generative AI in Google Search (2026-05)", "https://developers.google.com/search/blog/2026/05/a-new-resource-for-optimizing",
+         "生成AI検索機能向け最適化ガイド (Optimizing for Generative AI Features) の公開を発表した公式記事。『生成AI検索向けの最適化は特別なGEO/AEO施策ではなく通常のSEOの延長である』というメッセージを明示している"),
     ]),
     ("Search Central ドキュメント", [
         ("Search Central ドキュメントトップ", "https://developers.google.com/search/docs?hl=ja",
@@ -122,6 +128,8 @@ REFERENCE_MATERIALS: list[tuple[str, list[tuple[str, str, str]]]] = [
          "ユーザーが特定サイトを『優先ソース』として選べる新機能の公式説明ページ"),
         ("Creating Helpful, Reliable, People-First Content", "https://developers.google.com/search/docs/fundamentals/creating-helpful-content",
          "Helpful Content (ユーザー第一のコンテンツ) の定義そのものを説明する公式ページ"),
+        ("Google Search's Guidance on Generative AI Content on Your Website", "https://developers.google.com/search/docs/fundamentals/using-gen-ai-content",
+         "AI生成コンテンツそのものではなく、人的レビュー・E-E-A-Tの有無を問題にするというGoogleの公式スタンスを説明するガイダンスページ。⚠️ 2026-10頃、公開前に人の手で事実確認・レビューを行うよう強く求める文言が追加されたと複数の二次ソースが報告しているが、Google公式の改定履歴表示でこの日付自体の確認は取れていない"),
     ]),
     ("Search Central サポート", [
         ("Google SEO Help and Support", "https://developers.google.com/search/help",
